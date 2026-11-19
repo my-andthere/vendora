@@ -71,86 +71,78 @@ $pageTitle = 'Dashboard Procurement';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <div>
-        <h4 class="mb-0">Dashboard Procurement</h4>
-        <div class="small text-muted">Monitoring SLA, beban kerja vendor, dan progres pengerjaan tiket.</div>
-    </div>
-    <div class="d-flex gap-2">
-        <a href="<?= url('vendors.php') ?>" class="btn btn-outline-secondary btn-sm"><i class="bi bi-truck"></i> Data Vendor</a>
-        <a href="<?= url('ticket_create.php') ?>" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle"></i> Buat Tiket</a>
-    </div>
-</div>
+<?= page_head('Dashboard Procurement', 'clipboard-data', 'Monitoring SLA, beban kerja vendor, dan progres pengerjaan tiket.',
+    '<a href="' . url('vendors.php') . '" class="btn btn-sm"><i class="bi bi-truck"></i> Data Vendor</a>'
+    . '<a href="' . url('ticket_create.php') . '" class="btn btn-sm btn-primary"><i class="bi bi-plus-circle"></i> Buat Tiket</a>') ?>
 
 <?php /* ---------- KPI ---------- */ ?>
 <div class="row g-3 mb-4">
     <div class="col-6 col-xl-3">
-        <div class="card h-100"><div class="card-body">
+        <div class="card h-100 kpi kpi-green"><div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
-                    <div class="text-muted small">Tiket Aktif</div>
-                    <div class="display-6"><?= $activeTickets ?></div>
+                    <div class="kpi-label"><i class="bi bi-hourglass-split"></i> Tiket Aktif</div>
+                    <div class="kpi-value"><?= $activeTickets ?></div>
                 </div>
-                <i class="bi bi-hourglass-split fs-3 text-primary opacity-50"></i>
+                <span class="kpi-icon"><i class="bi bi-hourglass-split"></i></span>
             </div>
-            <div class="small text-muted">dari <?= array_sum($counts) ?> tiket total</div>
-            <div class="small mt-1">
-                <span class="badge bg-secondary">Menunggu <?= $counts['open'] ?></span>
-                <span class="badge bg-info text-dark">Dikerjakan <?= $counts['on_progress'] ?></span>
-                <span class="badge bg-warning text-dark">Review <?= $counts['foc_review'] + $counts['inventory_check'] ?></span>
+            <div class="kpi-note">dari <?= array_sum($counts) ?> tiket total</div>
+            <div class="kpi-note mt-1">
+                <span class="badge">Menunggu <?= $counts['open'] ?></span>
+                <span class="badge">Dikerjakan <?= $counts['on_progress'] ?></span>
+                <span class="badge">Review <?= $counts['foc_review'] + $counts['inventory_check'] ?></span>
             </div>
         </div></div>
     </div>
 
     <div class="col-6 col-xl-3">
-        <div class="card h-100"><div class="card-body">
+        <div class="card h-100 kpi kpi-teal"><div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
-                    <div class="text-muted small">Kepatuhan SLA</div>
-                    <div class="display-6 <?= $slaPct < 80 && $slaTotal ? 'text-danger' : '' ?>"><?= $slaPct ?>%</div>
+                    <div class="kpi-label"><i class="bi bi-speedometer2"></i> Kepatuhan SLA</div>
+                    <div class="kpi-value"><?= $slaPct ?>%</div>
                 </div>
-                <i class="bi bi-speedometer2 fs-3 text-success opacity-50"></i>
+                <span class="kpi-icon"><i class="bi bi-speedometer2"></i></span>
             </div>
-            <div class="small text-muted">SLA maks <?= fmt_duration(SLA_MINUTES) ?> · dihitung sampai PERMANENT</div>
-            <div class="small mt-1">
-                <span class="text-success"><?= (int)$sla['ontime'] ?> sesuai</span> ·
-                <span class="text-danger"><?= (int)$sla['late'] ?> lewat</span>
+            <div class="kpi-note">SLA maks <?= fmt_duration(SLA_MINUTES) ?> · dihitung sampai PERMANENT</div>
+            <div class="kpi-note mt-1">
+                <?= (int)$sla['ontime'] ?> sesuai · <?= (int)$sla['late'] ?> lewat
             </div>
             <div class="progress mt-1" style="height:6px">
-                <div class="progress-bar bg-success" style="width:<?= $slaPct ?>%"></div>
-                <div class="progress-bar bg-danger" style="width:<?= $slaTotal ? 100 - $slaPct : 0 ?>%"></div>
+                <div class="progress-bar" style="width:<?= $slaPct ?>%;background:#fff"></div>
+                <div class="progress-bar" style="width:<?= $slaTotal ? 100 - $slaPct : 0 ?>%;background:rgba(255,255,255,.45)"></div>
             </div>
         </div></div>
     </div>
 
     <div class="col-6 col-xl-3">
-        <div class="card h-100"><div class="card-body">
+        <div class="card h-100 kpi kpi-lime"><div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
-                    <div class="text-muted small">Lewat SLA (Berjalan)</div>
-                    <div class="display-6 <?= $slaRunningLate ? 'text-danger' : '' ?>"><?= $slaRunningLate ?></div>
+                    <div class="kpi-label"><i class="bi bi-exclamation-triangle"></i> Lewat SLA (Berjalan)</div>
+                    <div class="kpi-value"><?= $slaRunningLate ?></div>
                 </div>
-                <i class="bi bi-exclamation-triangle fs-3 text-danger opacity-50"></i>
+                <span class="kpi-icon"><i class="bi bi-exclamation-triangle"></i></span>
             </div>
-            <div class="small text-muted">tiket masih berjalan &amp; sudah melewati batas SLA</div>
+            <div class="kpi-note">tiket masih berjalan &amp; sudah melewati batas SLA</div>
             <?php if ($slaRunningLate): ?>
-                <a href="<?= url('tickets.php?sla=late') ?>" class="small text-danger text-decoration-none">Lihat semua &rarr;</a>
+                <a href="<?= url('tickets.php?sla=late') ?>" class="small text-white text-decoration-none">Lihat semua &rarr;</a>
             <?php endif; ?>
         </div></div>
     </div>
 
     <div class="col-6 col-xl-3">
-        <div class="card h-100"><div class="card-body">
+        <div class="card h-100 kpi kpi-emerald"><div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
-                    <div class="text-muted small">Material Tidak Sesuai</div>
-                    <div class="display-6 <?= $invMismatch ? 'text-danger' : '' ?>"><?= $invMismatch ?></div>
+                    <div class="kpi-label"><i class="bi bi-box-seam"></i> Material Tidak Sesuai</div>
+                    <div class="kpi-value"><?= $invMismatch ?></div>
                 </div>
-                <i class="bi bi-box-seam fs-3 text-secondary opacity-50"></i>
+                <span class="kpi-icon"><i class="bi bi-box-seam"></i></span>
             </div>
-            <div class="small text-muted">selisih pemakaian material di laporan vendor vs stok</div>
+            <div class="kpi-note">selisih pemakaian material di laporan vendor vs stok</div>
             <?php if ($lowStock): ?>
-                <div class="small mt-1 text-warning-emphasis">⚠ <?= count($lowStock) ?> material stok ≤ 10</div>
+                <div class="kpi-note mt-1"><i class="bi bi-exclamation-triangle"></i> <?= count($lowStock) ?> material stok &le; 10</div>
             <?php endif; ?>
         </div></div>
     </div>

@@ -43,10 +43,8 @@ $users = q("SELECT u.*, v.name vendor_name FROM users u LEFT JOIN vendors v ON v
 $pageTitle = 'User';
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">User</h4>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#userModal" onclick="editUser({is_active:1, role:'vendor'})"><i class="bi bi-plus-circle"></i> Tambah User</button>
-</div>
+<?= page_head('User', 'people', 'Akun pengguna sistem dan haknya per role',
+    '<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#userModal" onclick="editUser({is_active:1, role:\'vendor\'})"><i class="bi bi-plus-circle"></i> Tambah User</button>') ?>
 <div class="card"><div class="table-responsive"><table class="table table-hover mb-0 small">
     <thead class="table-light"><tr><th>Username</th><th>Nama</th><th>Role</th><th>Vendor</th><th>Status</th><th></th></tr></thead>
     <tbody>

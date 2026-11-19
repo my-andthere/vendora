@@ -249,13 +249,8 @@ $dtVal = fn($v) => $v ? date('Y-m-d\TH:i', strtotime($v)) : '';
 $pageTitle = 'Form Laporan ' . $t['ticket_no'];
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-        <a href="<?= url('ticket_view.php?id=' . $id) ?>" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Kembali ke tiket</a>
-        <h4 class="mb-0">Form Laporan Pekerjaan <?= vendor_type_badge($t['vendor_type']) ?></h4>
-    </div>
-    <div><?= sla_badge($t) ?></div>
-</div>
+<a href="<?= url('ticket_view.php?id=' . $id) ?>" class="small text-decoration-none d-inline-block mb-2"><i class="bi bi-arrow-left"></i> Kembali ke tiket</a>
+<?= page_head('Form Laporan Pekerjaan', 'clipboard2-check', '', '<div>' . vendor_type_badge($t['vendor_type']) . ' ' . sla_badge($t) . '</div>') ?>
 <?php if ($isMs): ?>
 <div class="alert alert-primary small">
     <i class="bi bi-lightning-charge-fill"></i>

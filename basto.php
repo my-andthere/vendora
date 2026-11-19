@@ -32,9 +32,7 @@ require __DIR__ . '/includes/header.php';
 ?>
 
 <?php if (!$basto): ?>
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0"><i class="bi bi-file-earmark-check"></i> BASTO</h4>
-    </div>
+    <?= page_head('BASTO', 'file-earmark-check', 'Dokumen selesai pekerjaan yang terbentuk otomatis dari form vendor') ?>
     <div class="alert alert-info small">
         <i class="bi bi-info-circle"></i>
         BASTO terbentuk otomatis dari form vendor yang sudah diisi, ketika tiket dinyatakan selesai
@@ -60,14 +58,9 @@ require __DIR__ . '/includes/header.php';
     </table></div></div>
 <?php else: ?>
     <?php $d = $basto['data']; ?>
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <div>
-            <a href="<?= url('ticket_view.php?id=' . $ticketId) ?>" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Kembali ke tiket</a>
-            <h4 class="mb-0"><i class="bi bi-file-earmark-check"></i> BASTO <?= e($basto['no_basto']) ?></h4>
-            <div class="small text-muted">Otomatis terbentuk dari form vendor yang sudah diisi · <?= fmt_dt($basto['generated_at']) ?></div>
-        </div>
-        <button class="btn btn-outline-secondary btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Cetak</button>
-    </div>
+    <a href="<?= url('ticket_view.php?id=' . $ticketId) ?>" class="small text-decoration-none d-inline-block mb-2"><i class="bi bi-arrow-left"></i> Kembali ke tiket</a>
+    <?= page_head('BASTO ' . $basto['no_basto'], 'file-earmark-check', 'Otomatis terbentuk dari form vendor yang sudah diisi · ' . fmt_dt($basto['generated_at']),
+        '<button class="btn btn-sm" onclick="window.print()"><i class="bi bi-printer"></i> Cetak</button>') ?>
 
     <div class="card mb-3">
         <div class="card-header bg-white fw-semibold">Identitas</div>

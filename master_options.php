@@ -71,13 +71,8 @@ $pageTitle = 'Master Option';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <div>
-        <h4 class="mb-0"><i class="bi bi-list-check"></i> Master Option</h4>
-        <div class="small text-muted">Pilihan yang dipakai di form laporan vendor: jenis kerusakan dan tindakan perbaikan.</div>
-    </div>
-    <a href="<?= url('vendors.php') ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Kembali ke Vendor</a>
-</div>
+<?= page_head('Master Option', 'list-check', 'Pilihan yang dipakai di form laporan vendor: jenis kerusakan dan tindakan perbaikan',
+    '<a href="' . url('vendors.php') . '" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Kembali ke Vendor</a>') ?>
 
 <div class="row g-3">
     <?php foreach (OPTION_CATEGORIES as $cat => [$label, $icon]): ?>

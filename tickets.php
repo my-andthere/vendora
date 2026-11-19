@@ -36,12 +36,10 @@ $cities = q('SELECT * FROM cities ORDER BY name')->fetchAll();
 $pageTitle = 'Tiket';
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">Daftar Tiket</h4>
-    <?php if (has_role('admin', 'noc')): ?>
-        <a href="<?= url('ticket_create.php') ?>" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Buat Tiket</a>
-    <?php endif; ?>
-</div>
+<?= page_head('Daftar Tiket', 'ticket-detailed', 'Kelola dan pantau seluruh tiket perbaikan jaringan',
+    has_role('admin', 'noc')
+        ? '<a href="' . url('ticket_create.php') . '" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Buat Tiket</a>'
+        : '') ?>
 <form class="card card-body mb-3">
     <div class="row g-2">
         <div class="col-md-3"><input name="q" class="form-control form-control-sm" placeholder="Cari no tiket / ref NOC / pelanggan / lokasi" value="<?= e($f['q']) ?>"></div>

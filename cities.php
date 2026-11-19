@@ -34,7 +34,7 @@ $rows = q("SELECT c.*, r.name region_name, (SELECT COUNT(*) FROM vendors v WHERE
 $pageTitle = 'Kota';
 require __DIR__ . '/includes/header.php';
 ?>
-<h4 class="mb-3">Kota / Area</h4>
+<?= page_head('Kota / Area', 'buildings', 'Daftar kota yang dilayani beserta regionnya') ?>
 <div class="row g-3">
     <div class="col-md-4"><div class="card card-body">
         <form method="post"><?= csrf_field() ?>

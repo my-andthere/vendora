@@ -241,10 +241,10 @@ unset($g);
 $pageTitle = 'Vendor';
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">Vendor</h4>
-    <?php if ($canManage): ?><button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#vendorModal" onclick="editVendor({})"><i class="bi bi-plus-circle"></i> Tambah Vendor</button><?php endif; ?>
-</div>
+<?= page_head('Vendor', 'truck', 'Mitraulknerasa, status, skill & batas beban kerja per region',
+    $canManage
+        ? '<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#vendorModal" onclick="editVendor({})"><i class="bi bi-plus-circle"></i> Tambah Vendor</button>'
+        : '') ?>
 
 <div class="row g-2 mb-3 small">
     <?php foreach (VENDOR_STATUS as $k => [$l, $c, $desc]): ?>

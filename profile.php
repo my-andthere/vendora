@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle = 'Ganti Password';
 require __DIR__ . '/includes/header.php';
 ?>
-<h4 class="mb-3">Ganti Password</h4>
+<?= page_head('Ganti Password', 'key', 'Perbarui kata sandi akun Anda') ?>
 <div class="card" style="max-width:480px"><div class="card-body">
     <form method="post">
         <?= csrf_field() ?>

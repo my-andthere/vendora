@@ -46,10 +46,8 @@ $rows = q("SELECT m.*,
 $pageTitle = 'Material';
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">Material / Stok</h4>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#matModal" onclick="editMat({is_active:1})"><i class="bi bi-plus-circle"></i> Tambah Material</button>
-</div>
+<?= page_head('Material / Stok', 'box-seam', 'Kelola material, stok gudang, dan batas pemakaian per tiket',
+    '<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#matModal" onclick="editMat({is_active:1})"><i class="bi bi-plus-circle"></i> Tambah Material</button>') ?>
 <div class="card"><div class="table-responsive">
     <table class="table table-hover mb-0 small">
         <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Satuan</th><th class="text-end">Stok Gudang</th><th class="text-end">Sedang di Vendor</th><th class="text-end">Batas/Tiket</th><th>Status</th><th></th></tr></thead>

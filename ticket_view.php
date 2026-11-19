@@ -32,18 +32,14 @@ $pendingIssue = array_filter($materials, fn($m) => $m['qty_issued'] === null);
 $pageTitle = $t['ticket_no'];
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <div>
-        <a href="<?= url('tickets.php') ?>" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Daftar tiket</a>
-        <h4 class="mb-0"><?= e($t['ticket_no']) ?> <?= status_badge($st) ?></h4>
-    </div>
-    <div class="text-end">
-        <div class="small text-muted">SLA <?= fmt_duration((int)$t['sla_minutes']) ?></div>
-        <?= $st === 'cancelled' ? '-' : sla_badge($t) ?>
-        <?php if ($t['revision_count']): ?><span class="badge bg-danger-subtle text-danger">Revisi ke-<?= (int)$t['revision_count'] ?></span><?php endif; ?>
-        <div class="mt-1"><?= accept_badge($t) ?></div>
-    </div>
-</div>
+<a href="<?= url('tickets.php') ?>" class="small text-decoration-none d-inline-block mb-2"><i class="bi bi-arrow-left"></i> Daftar tiket</a>
+<?= page_head($t['ticket_no'], 'ticket-perforated', '', '<div class="text-end d-flex flex-wrap gap-2 align-items-center justify-content-end">'
+        . status_badge($st)
+        . '<span class="small text-white-50">SLA ' . fmt_duration((int)$t['sla_minutes']) . '</span>'
+        . ($st === 'cancelled' ? '' : sla_badge($t))
+        . ((int)$t['revision_count'] ? '<span class="badge bg-white text-danger">Revisi ke-' . (int)$t['revision_count'] . '</span>' : '')
+        . accept_badge($t)
+        . '</div>') ?>
 
 <div class="row g-3">
     <div class="col-lg-8">

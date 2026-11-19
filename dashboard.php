@@ -37,12 +37,10 @@ $actionTitle = [
 $pageTitle = 'Dashboard';
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">Dashboard</h4>
-    <?php if (has_role('admin', 'noc')): ?>
-        <a href="<?= url('ticket_create.php') ?>" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Buat Tiket</a>
-    <?php endif; ?>
-</div>
+<?= page_head('Dashboard', 'speedometer2', 'Ringkasan SLA, workload vendor, dan progres pengerjaan',
+    has_role('admin', 'noc')
+        ? '<a href="' . url('ticket_create.php') . '" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Buat Tiket</a>'
+        : '') ?>
 
 <?php if ($u['role'] === 'vendor' && $u['vendor_status'] !== 'available'): ?>
     <div class="alert alert-warning">Status vendor Anda saat ini <?= vendor_badge($u['vendor_status']) ?> — Anda tidak akan menerima tiket baru.</div>
@@ -92,29 +90,33 @@ endif; ?>
 
 <div class="row g-3 mb-4">
     <div class="col-md-6">
-        <div class="card h-100"><div class="card-body">
-            <h6 class="text-muted">Kepatuhan SLA (maks <?= fmt_duration(SLA_MINUTES) ?>)</h6>
-            <div class="d-flex align-items-end gap-3">
-                <div class="display-6"><?= $slaPct ?>%</div>
-                <div class="small pb-2"><span class="text-success"><?= (int)$sla['ontime'] ?> sesuai SLA</span> ·
-                    <span class="text-danger"><?= (int)$sla['late'] ?> lewat SLA</span></div>
+        <div class="card h-100 kpi kpi-green"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="kpi-label"><i class="bi bi-shield-check"></i> Kepatuhan SLA (maks <?= fmt_duration(SLA_MINUTES) ?>)</div>
+                <span class="kpi-icon"><i class="bi bi-speedometer2"></i></span>
             </div>
+            <div class="kpi-value"><?= $slaPct ?>%</div>
+            <div class="kpi-note"><span><?= (int)$sla['ontime'] ?> sesuai SLA</span> ·
+                <span><?= (int)$sla['late'] ?> lewat SLA</span></div>
             <div class="progress mt-2" style="height:8px">
-                <div class="progress-bar bg-success" style="width:<?= $slaPct ?>%"></div>
-                <div class="progress-bar bg-danger" style="width:<?= $slaTotal ? 100 - $slaPct : 0 ?>%"></div>
+                <div class="progress-bar" style="width:<?= $slaPct ?>%;background:#fff"></div>
+                <div class="progress-bar" style="width:<?= $slaTotal ? 100 - $slaPct : 0 ?>%;background:rgba(255,255,255,.45)"></div>
             </div>
-            <div class="small text-muted mt-2">Dihitung dari tiket yang sudah <b>PERMANENT</b> (SLA diukur sampai selesai).</div>
+            <div class="kpi-note mt-2">Dihitung dari tiket yang sudah <b>PERMANENT</b> (SLA diukur sampai selesai).</div>
             <?php if ($slaRunningLate): ?>
-                <div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle"></i>
+                <div class="kpi-note mt-1"><i class="bi bi-exclamation-triangle"></i>
                     <?= $slaRunningLate ?> tiket masih berjalan &amp; sudah lewat batas SLA.</div>
             <?php endif; ?>
         </div></div>
     </div>
     <div class="col-md-6">
-        <div class="card h-100"><div class="card-body">
-            <h6 class="text-muted">Material tidak sesuai (hasil cek inventory)</h6>
-            <div class="display-6 <?= $invMismatch ? 'text-danger' : '' ?>"><?= $invMismatch ?></div>
-            <div class="small text-muted">Tiket dengan selisih antara material terpakai (laporan vendor) dan material keluar - kembali.</div>
+        <div class="card h-100 kpi kpi-teal"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="kpi-label"><i class="bi bi-box-seam"></i> Material tidak sesuai</div>
+                <span class="kpi-icon"><i class="bi bi-clipboard-data"></i></span>
+            </div>
+            <div class="kpi-value"><?= $invMismatch ?></div>
+            <div class="kpi-note">Tiket dengan selisih antara material terpakai (laporan vendor) dan material keluar - kembali.</div>
         </div></div>
     </div>
 </div>

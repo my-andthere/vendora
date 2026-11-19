@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pageTitle = 'Buat Tiket';
 require __DIR__ . '/includes/header.php';
 ?>
-<h4 class="mb-3">Buat Tiket Gangguan (NOC)</h4>
+<?= page_head('Buat Tiket Gangguan (NOC)', 'plus-circle', 'Pencatatan gangguan baru — vendor dan nomor SPK ditentukan otomatis') ?>
 <?php if ($errors): ?><div class="alert alert-danger"><ul class="mb-0"><?php foreach ($errors as $er): ?><li><?= e($er) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
 <div class="alert alert-info small"><i class="bi bi-info-circle"></i> Setelah disimpan, sistem otomatis menunjuk vendor berstatus <b>Available</b> di kota yang sama
     (prioritas: <b>Vendor MS</b> dulu, lalu vendor dengan pekerjaan aktif paling sedikit).

@@ -28,12 +28,10 @@ $eventLabel = [
 $pageTitle = 'Notifikasi ke NOC';
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">Notifikasi ke Sistem NOC</h4>
-    <?php if ($u['role'] === 'admin'): ?>
-        <form method="post"><?= csrf_field() ?><button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat"></i> Kirim ulang pending/gagal</button></form>
-    <?php endif; ?>
-</div>
+<?= page_head('Notifikasi ke Sistem NOC', 'broadcast', 'Outbox webhook ke NOC (retry manual untuk yang pending/gagal)',
+    $u['role'] === 'admin'
+        ? '<form method="post">' . csrf_field() . '<button class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-repeat"></i> Kirim ulang pending/gagal</button></form>'
+        : '') ?>
 <div class="alert alert-<?= NOC_WEBHOOK_URL === '' ? 'warning' : 'success' ?> small">
     <?php if (NOC_WEBHOOK_URL === ''): ?>
         Integrasi NOC <b>belum disambungkan</b> (NOC_WEBHOOK_URL kosong di config.php). Semua event tetap dicatat di sini dan bisa dikirim ulang setelah disambungkan.

@@ -68,22 +68,15 @@ $pageTitle = 'Rekap Bulanan';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <div>
-        <h4 class="mb-0"><i class="bi bi-bar-chart-line"></i> Rekap Bulanan</h4>
-        <div class="small text-muted">Rekap pekerjaan selesai (PERMANENT) per bulan.</div>
-    </div>
-    <div class="d-flex gap-2">
-        <form method="get" class="d-flex gap-2">
-            <select name="month" class="form-select form-select-sm" onchange="this.form.submit()">
-                <?php foreach ($months as $m): ?>
-                    <option value="<?= $m ?>" <?= $m === $month ? 'selected' : '' ?>><?= e(date('F Y', strtotime($m . '-01'))) ?></option>
-                <?php endforeach; ?>
-            </select>
-        </form>
-        <a href="<?= url('rekap.php?month=' . $month . '&export=csv') ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-download"></i> CSV</a>
-    </div>
-</div>
+<?= page_head('Rekap Bulanan', 'bar-chart-line', 'Rekap pekerjaan selesai (PERMANENT) per bulan',
+    '<div class="d-flex gap-2 align-items-center">'
+        . '<form method="get" class="d-flex gap-2"><select name="month" class="form-select form-select-sm" onchange="this.form.submit()">'
+        . implode('', array_map(function ($m) use ($month) {
+            return '<option value="' . $m . '" ' . ($m === $month ? 'selected' : '') . '>' . e(date('F Y', strtotime($m . '-01'))) . '</option>';
+        }, $months))
+        . '</select></form>'
+        . '<a href="' . url('rekap.php?month=' . $month . '&export=csv') . '" class="btn btn-sm"><i class="bi bi-download"></i> CSV</a>'
+        . '</div>') ?>
 
 <?php if (isset($_GET['export']) && $_GET['export'] === 'csv'):
     header('Content-Type: text/csv; charset=utf-8');

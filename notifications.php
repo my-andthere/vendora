@@ -18,10 +18,8 @@ $rows = q('SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 10
 $pageTitle = 'Notifikasi';
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0">Notifikasi</h4>
-    <form method="post"><?= csrf_field() ?><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-check2-all"></i> Tandai semua dibaca</button></form>
-</div>
+<?= page_head('Notifikasi', 'bell', 'Pemberitahuan internal untuk pengguna',
+    '<form method="post">' . csrf_field() . '<button class="btn btn-sm btn-outline-secondary"><i class="bi bi-check2-all"></i> Tandai semua dibaca</button></form>') ?>
 <div class="card"><div class="list-group list-group-flush">
     <?php foreach ($rows as $n): ?>
         <a href="<?= url('notifications.php?open=' . $n['id']) ?>" class="list-group-item list-group-item-action <?= $n['is_read'] ? '' : 'fw-semibold bg-primary-subtle' ?>">

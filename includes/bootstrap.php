@@ -59,6 +59,29 @@ function redirect(string $path): void
     exit;
 }
 
+/**
+ * Header halaman dengan gradasi hijau + ikon Bootstrap.
+ *
+ * @param string $title   Judul halaman
+ * @param string $icon    Nama ikon Bootstrap Icons (tanpa "bi-")
+ * @param string $sub     Sub judul opsional
+ * @param string $actions HTML tombol aksi di sisi kanan
+ */
+function page_head(string $title, string $icon = 'speedometer2', string $sub = '', string $actions = ''): string
+{
+    $h  = '<div class="page-head mb-3"><div>';
+    $h .= '<h4><i class="bi bi-' . e($icon) . '"></i> ' . e($title) . '</h4>';
+    if ($sub !== '') {
+        $h .= '<div class="sub">' . e($sub) . '</div>';
+    }
+    $h .= '</div>';
+    if ($actions !== '') {
+        $h .= '<div class="d-flex gap-2 flex-wrap">' . $actions . '</div>';
+    }
+    $h .= '</div>';
+    return $h;
+}
+
 function flash(string $type, string $msg): void
 {
     $_SESSION['flash'][] = [$type, $msg];

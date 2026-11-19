@@ -91,7 +91,7 @@ foreach ($regions as $r) {
 $pageTitle = 'Region';
 require __DIR__ . '/includes/header.php';
 ?>
-<h4 class="mb-3">Region / Wilayah</h4>
+<?= page_head('Region / Wilayah', 'geo-alt', 'Pengelompokan kota & batas limit workload vendor per region') ?>
 <p class="text-muted small">
     Ticketing berbasis <b>region</b>: satu ticket Service hanya akan diteruskan ke vendor yang terdaftar
     di region kota tersebut. Batas <b>Limit Workload</b> dihitung per vendor <i>dan</i> per region,

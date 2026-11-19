@@ -29,14 +29,18 @@ $menu = [
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link href="<?= url('assets/style.css') ?>" rel="stylesheet">
+    <link href="<?= url('assets/theme.css') ?>?v=<?= @filemtime(__DIR__ . '/../assets/theme.css') ?: '1' ?>" rel="stylesheet">
 </head>
-<body>
+<body class="<?= $u ? '' : 'vd-auth' ?>">
 <?php if ($u): ?>
-<nav class="navbar navbar-dark bg-dark sticky-top px-3">
+<nav class="navbar navbar-dark vd-navbar sticky-top px-3">
     <button class="btn btn-outline-light btn-sm d-lg-none me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebar">
         <i class="bi bi-list"></i>
     </button>
-    <a class="navbar-brand fw-semibold" href="<?= url($u['role'] === 'procurement' ? 'procurement_dashboard.php' : 'dashboard.php') ?>"><i class="bi bi-tools"></i> <?= e(APP_NAME) ?></a>
+    <a class="navbar-brand" href="<?= url($u['role'] === 'procurement' ? 'procurement_dashboard.php' : 'dashboard.php') ?>">
+        <span class="brand-mark"><i class="bi bi-lightning-charge-fill"></i></span>
+        <span><?= e(APP_NAME) ?><small>PROCUREMENT FIELD SERVICE</small></span>
+    </a>
     <div class="ms-auto d-flex align-items-center gap-3">
         <a href="<?= url('notifications.php') ?>" class="text-light position-relative">
             <i class="bi bi-bell fs-5"></i>
@@ -65,6 +69,13 @@ $menu = [
             <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#sidebar"></button>
         </div>
         <div class="offcanvas-body p-0">
+            <div class="sidebar-brand d-lg-none">
+                <span class="sq"><i class="bi bi-lightning-charge-fill"></i></span>
+                <span>
+                    <span class="t"><?= e(APP_NAME) ?></span><br>
+                    <span class="s">Menu Navigasi</span>
+                </span>
+            </div>
             <ul class="nav flex-column w-100 py-2">
                 <?php foreach ($menu as [$href, $icon, $label, $roles]): if (!in_array($u['role'], $roles, true)) continue; ?>
                     <li class="nav-item">
