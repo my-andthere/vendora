@@ -2,6 +2,52 @@
 
 PHP native + MySQL (XAMPP). Buka: http://localhost/procurement
 
+## Jalankan Online (Docker + Cloudflare Tunnel)
+
+Stack produksi sudah disiapkan di folder [`deploy/`](deploy/) — MariaDB 11 + Apache/PHP 8.3
+(ekstensi `pdo_mysql`, `mysqli`, `gd`) + Cloudflare Tunnel untuk URL publik HTTPS.
+
+```bash
+cd deploy
+./start.sh          # build container, jalankan DB+web, buat tunnel, cetak URL publik
+./start.sh stop     # hentikan tunnel & container
+./start.sh logs     # log container web
+```
+
+- **URL lokal**: http://localhost:8080
+- **URL publik**: `https://<random>.trycloudflare.com` (dicetak oleh `start.sh`)
+  - Quick tunnel memakai domain acak — berubah tiap container tunnel dibuat ulang.
+  - Untuk URL tetap, pakai Cloudflare Named Tunnel (`cloudflared tunnel login` + `config.yml`).
+- **Kredensial & API key** diatur di [`deploy/.env`](deploy/.env) (jangan di-commit).
+- **Image Docker**: base image di-pin ke digest + versi paket `apt` di-pin
+  ([`deploy/Dockerfile`](deploy/Dockerfile)) agar build reproducible dan bebas
+  warning hadolint (`DL3008`).
+
+File [.env](deploy/.env) yang tersedia:
+
+| Variabel | Fungsi |
+|----------|--------|
+| `WEB_PORT` | Port host untuk Apache (default `8080`) |
+| `DB_PASSWORD` / `DB_ROOT_PASSWORD` | Password MariaDB |
+| `BASE_URL` | Path aplikasi: `''` (root) atau `/procurement` (subfolder) |
+| `NOC_API_KEY` | Key header `X-API-KEY` untuk `/api/tickets.php` |
+
+Instalasi database (destructive, `?force=1`/`--force` menghapus semua data):
+
+```bash
+cd deploy
+docker compose exec -e DB_USER=root -e DB_PASS=root web php install.php --force
+```
+
+> `install.php` lewat browser hanya boleh dari `localhost`; dari container selalu jalankan via CLI.
+
+### Perbedaan vs XAMPP
+
+- `config.php` kini membaca nilai dari environment variable (`DB_HOST`, `DB_USER`, `DB_PASS`,
+  `PROC_DB_NAME`, `BASE_URL`, `NOC_API_KEY`, `NOC_WEBHOOK_URL`) dengan fallback ke nilai lama —
+  jadi instalasi XAMPP yang lama tetap jalan tanpa perubahan.
+- Folder `uploads/` harus writable oleh user web server (`chmod 777 uploads`).
+
 ## Instalasi
 1. Jalankan Apache & MySQL di XAMPP.
 2. Buka http://localhost/procurement/install.php (sekali saja). Untuk reset total: `install.php?force=1`.

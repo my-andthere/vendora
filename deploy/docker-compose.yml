@@ -1,0 +1,44 @@
+services:
+  db:
+    image: mariadb:11
+    container_name: vendora-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:-root}"
+      MARIADB_DATABASE: procurement_db
+      MARIADB_USER: procurement
+      MARIADB_PASSWORD: "${DB_PASSWORD:-procurement}"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vendora-php:8.3
+    container_name: vendora-web
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: procurement_db
+      DB_USER: procurement
+      DB_PASS: "${DB_PASSWORD:-procurement}"
+      BASE_URL: "${BASE_URL:-}"
+      NOC_API_KEY: "${NOC_API_KEY:-GANTI-API-KEY-NOC-INI}"
+    volumes:
+      - ..:/var/www/html
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  db_data:
