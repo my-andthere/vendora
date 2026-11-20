@@ -77,7 +77,7 @@ $created['materials'][] = $matFree;
 
 $vendorId = (int)q("SELECT id FROM vendors WHERE city_id=? AND status='available' ORDER BY id LIMIT 1", [$cityId])->fetchColumn();
 q("INSERT INTO tickets (ticket_no, spk_no, source, city_id, customer_name, problem_type, priority, reported_at, sla_minutes, status, vendor_id, created_by)
-   VALUES (?,?,'nac',?,'Uji Konsep','Test',  'medium', NOW(), 180, 'on_progress', ?, 1)",
+   VALUES (?,?,'manual',?,'Uji Konsep','Test',  'medium', NOW(), 180, 'on_progress', ?, 1)",
     ['TKT-UJI-' . date('His') . '-A', 'SPK-UJI-' . date('His') . '-A', $cityId, $vendorId]);
 $ticketId = (int)db()->lastInsertId();
 $created['tickets'][] = $ticketId;

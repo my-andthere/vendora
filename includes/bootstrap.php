@@ -1138,10 +1138,16 @@ function migrate_schema(): void
         q('ALTER TABLE materials ADD COLUMN max_use_per_ticket DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER stock');
     }
 
-    // Stage tanda check: region (PIC Region) & cgs (evaluasi internal CGS).
+    // Stage tanda check: region (PIC Region), inventory (cek material), cgs (evaluasi CGS), foc (ceklist FOC).
     $soCols = q('SHOW COLUMNS FROM ticket_signoffs')->fetchAll(PDO::FETCH_COLUMN);
     if (!in_array('stage', $soCols, true)) {
-        q("ALTER TABLE ticket_signoffs ADD COLUMN stage ENUM('region','cgs') NOT NULL DEFAULT 'region' AFTER ref_id");
+        q("ALTER TABLE ticket_signoffs ADD COLUMN stage ENUM('region','inventory','cgs','foc') NOT NULL DEFAULT 'region' AFTER ref_id");
+    } else {
+        $stageCol = q("SHOW COLUMNS FROM ticket_signoffs LIKE 'stage'")->fetch();
+        $stageType = (string)($stageCol['Type'] ?? '');
+        if ($stageType !== '' && (stripos($stageType, "'inventory'") === false || stripos($stageType, "'foc'") === false)) {
+            q("ALTER TABLE ticket_signoffs MODIFY COLUMN stage ENUM('region','inventory','cgs','foc') NOT NULL DEFAULT 'region'");
+        }
     }
     // Ganti unique key lama (ticket_id, scope, ref_id) -> ditambah stage.
     // Urutan penting: tambah key baru DULU (FK butuh index dengan kolom pertama ticket_id),
@@ -1164,13 +1170,14 @@ function migrate_schema(): void
         q('ALTER TABLE ticket_photos ADD COLUMN blur_score DECIMAL(10,4) NULL AFTER is_blurry');
     }
 
-    // Tanda check / keterangan: stage region (PIC Region) & cgs (evaluasi internal CGS).
+    // Tanda check / keterangan: stage region (PIC Region), inventory (cek material),
+    // cgs (evaluasi internal CGS) & foc (ceklist FOC).
     q('CREATE TABLE IF NOT EXISTS ticket_signoffs (
         id INT AUTO_INCREMENT PRIMARY KEY,
         ticket_id INT NOT NULL,
         scope ENUM(\'material\',\'dokumentasi\',\'penyelesaian\',\'sla\') NOT NULL,
         ref_id INT NOT NULL DEFAULT 0,
-        stage ENUM(\'region\',\'cgs\') NOT NULL DEFAULT \'region\',
+        stage ENUM(\'region\',\'inventory\',\'cgs\',\'foc\') NOT NULL DEFAULT \'region\',
         status ENUM(\'pending\',\'ok\',\'marked\') NOT NULL DEFAULT \'pending\',
         note VARCHAR(255) NULL,
         checked_by INT NULL,
@@ -1312,6 +1319,9 @@ if (PHP_SAPI !== 'cli') {
 
 // Helper flow Vendor MS (Managed Service) - dimuat setelah semua fungsi di atas siap.
 require_once __DIR__ . '/vendor_ms.php';
+
+// Helper alur Vendor -> Inventory -> FOC (checklist & keterangan per tahap).
+require_once __DIR__ . '/workflow.php';
 
 // Helper pemeriksaan dokumentasi foto (blur) & validasi batas material.
 require_once __DIR__ . '/photo_check.php';

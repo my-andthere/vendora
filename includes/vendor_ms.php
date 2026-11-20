@@ -216,10 +216,18 @@ const SIGNOFF_SCOPES = [
     'penyelesaian' => 'Penyelesaian Kerusakan',
 ];
 
-/** Stage tanda check: region = PIC Region (fase 1) | cgs = evaluasi internal CGS (FOC/NAM/NOC). */
+/**
+ * Stage tanda check:
+ *  - region   = Tanda Check PIC Region (fase 1)
+ *  - inventory= Cek Material oleh Inventory (wajib sebelum lanjut ke FOC)
+ *  - cgs      = Evaluasi internal CGS (FOC/NAM/NOC)
+ *  - foc      = Ceklist evaluation oleh FOC (dokumentasi / penyebab / tindakan)
+ */
 const SIGNOFF_STAGES = [
-    'region' => 'Tanda Check PIC Region',
-    'cgs'    => 'Evaluasi CGS',
+    'region'    => 'Tanda Check PIC Region',
+    'inventory' => 'Cek Material Inventory',
+    'cgs'       => 'Evaluasi CGS',
+    'foc'       => 'Ceklist FOC',
 ];
 
 /**

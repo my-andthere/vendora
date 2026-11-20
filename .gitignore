@@ -1,0 +1,18 @@
+# Konfigurasi lokal & kredensial
+deploy/.env
+*.log
+
+# Cookie session dari curl (JANGAN pernah di-commit - berisi token sesi)
+cjn.txt
+*.cookie
+cookies.txt
+
+# Berkas sementara
+*.tmp
+*.bak
+*.swp
+.DS_Store
+
+# Folder build / cache
+node_modules/
+.vscode-test/

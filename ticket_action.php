@@ -122,66 +122,38 @@ switch ($action) {
 
     case 'inventory_check':
         need(has_role('inventory', 'admin') && $st === 'inventory_check', $back);
-        $result = $_POST['result'] ?? '';
-        $note = trim($_POST['note'] ?? '');
-        need(in_array($result, ['sesuai', 'tidak_sesuai'], true), $back, 'Hasil pengecekan tidak valid.');
-        need($result === 'sesuai' || $note !== '', $back, 'Catatan wajib diisi jika material tidak sesuai.');
-        $lines = q('SELECT tm.*, m.name FROM ticket_materials tm JOIN materials m ON m.id=tm.material_id
-                    WHERE tm.ticket_id=? AND tm.qty_issued > 0 AND tm.qty_returned IS NULL AND tm.is_direct=0 FOR UPDATE', [$id])->fetchAll();
-        $returnedInput = (array)($_POST['returned'] ?? []);
-        foreach ($lines as $l) {
-            need(isset($returnedInput[$l['id']]) && $returnedInput[$l['id']] !== '', $back, 'Jumlah kembali untuk ' . $l['name'] . ' wajib diisi.');
-            $ret = (float)$returnedInput[$l['id']];
-            need($ret >= 0 && $ret <= (float)$l['qty_issued'], $back, 'Jumlah kembali ' . $l['name'] . ' tidak boleh melebihi jumlah keluar.');
-            q('UPDATE ticket_materials SET qty_returned=?, returned_by=?, returned_at=NOW() WHERE id=?', [$ret, $u['id'], $l['id']]);
-            q('UPDATE materials SET stock = stock + ? WHERE id=?', [$ret, $l['material_id']]);
-        }
-        q('INSERT INTO inventory_checks (ticket_id, checked_by, result, note) VALUES (?,?,?,?)', [$id, $u['id'], $result, $note]);
-        q("UPDATE tickets SET inv_result=?, status='foc_review' WHERE id=?", [$result, $id]);
-        $label = $result === 'sesuai' ? 'SESUAI' : 'TIDAK SESUAI';
-        log_ticket($id, 'inventory_checked', "Cek material oleh inventory: {$label}" . ($note ? " - {$note}" : ''));
-        notify_role('foc', "Tiket {$no} siap direview FOC (cek material: {$label}).", $id);
-        if ($result === 'tidak_sesuai') {
-            notify_vendor((int)$t['vendor_id'], "Tiket {$no}: pemakaian material dinyatakan TIDAK SESUAI oleh inventory.", $id);
-            notify_role('admin', "Tiket {$no}: material vendor {$t['vendor_name']} TIDAK SESUAI.", $id);
-        }
+        // Cek material oleh Inventory: checklist + keterangan per material WAJIB lengkap.
+        // Isi form vendor tidak diubah; Inventory hanya menambahkan checklist.
+        $invRes = wf_run_inventory_check($id, $_POST, (int)$u['id']);
+        need($invRes['ok'], $back, $invRes['error'] ?? 'Pengecekan material gagal.');
         flash('success', 'Pengecekan material disimpan, tiket diteruskan ke FOC.');
         break;
 
     // ================= FOC =================
     // Link Up: PERMANEN / TEMPORER (diagram kotak 6b - "LINK UP | PERMANEN" / "LINK UP | TEMPORER")
+    // + Simpan ceklist FOC (tanpa link up).
     case 'foc_permanent':
     case 'foc_temporary':
-        need(has_role('foc', 'admin', 'noc') && $st === 'foc_review', $back);
-        $note = trim($_POST['note'] ?? '');
+    case 'save_foc_eval':
+        need(has_role('foc', 'admin', 'noc', 'nam') && $st === 'foc_review', $back);
+
+        if ($action === 'save_foc_eval') {
+            // Simpan ceklist FOC saja (boleh belum lengkap) - tanpa link up.
+            $focRes = wf_run_foc_eval($id, $_POST, (int)$u['id']);
+            need($focRes['ok'], $back, $focRes['error'] ?? 'Gagal menyimpan ceklist FOC.');
+            flash('success', 'Ceklist FOC disimpan.');
+            break;
+        }
+
+        // Link up: FOC hanya menerima form yang sudah DONE dari Inventory dan
+        // semua item ceklist FOC (dokumentasi + penyebab + tindakan) wajib dicentang.
         $result = $action === 'foc_permanent' ? 'permanent' : 'temporary';
-        need($result === 'permanent' || $note !== '', $back, 'Catatan wajib diisi jika perbaikan temporary (agar vendor tahu apa yang harus diperbaiki).');
-        q('INSERT INTO foc_reviews (ticket_id, reviewer_id, result, note) VALUES (?,?,?,?)', [$id, $u['id'], $result, $note]);
+        $focRes = wf_run_foc_linkup($id, $_POST, (int)$u['id'], $result);
+        need($focRes['ok'], $back, $focRes['error'] ?? 'Link up gagal.');
         if ($result === 'permanent') {
-            // Waktu pengerjaan BERHENTI di sini (tidak berhenti saat cek inventory / review FOC / revisi).
-            // Tiket LANGSUNG ditutup: tidak ada tahap "Cek Ready SLA" lagi.
-            // BASTO terbentuk otomatis dari form vendor yang sudah diisi.
-            q("UPDATE tickets SET status='closed', repair_result='permanent',
-                completed_at=COALESCE(completed_at, NOW()),
-                work_finished_at=COALESCE(work_finished_at, NOW()) WHERE id=?", [$id]);
-            sla_sync_ticket($id);
-            $bastoNo = generate_basto($id, (int)$u['id']);
-            $sla = sla_state(get_ticket($id));
-            $slaLabel = $sla['overdue'] ? 'LEWAT SLA' : 'SESUAI SLA';
-            log_ticket($id, 'foc_permanent', 'FOC/NOC: LINK UP PERMANEN. Tiket selesai - ' . $slaLabel . '.'
-                . ($note ? " {$note}" : '') . ($bastoNo ? ' | BASTO ' . $bastoNo . ' terbentuk otomatis' : ''));
-            notify_role('noc', "Tiket {$no} SELESAI - {$slaLabel}.", $id);
-            notify_role('procurement', "Tiket {$no} SELESAI - {$slaLabel}.", $id);
-            notify_role('foc', "Tiket {$no} SELESAI - {$slaLabel}.", $id);
-            noc_notify($id, 'permanent_closed', ['sla' => $sla['verdict'], 'basto_no' => $bastoNo]);
-            flash('success', 'LINK UP PERMANEN. Tiket ditutup - ' . $slaLabel . '.'
-                . ($bastoNo ? ' BASTO ' . $bastoNo . ' terbentuk otomatis.' : ''));
+            flash('success', 'LINK UP PERMANEN. Tiket ditutup - ' . ($focRes['sla'] ?? 'SESUAI SLA') . '.'
+                . (!empty($focRes['basto_no']) ? ' BASTO ' . $focRes['basto_no'] . ' terbentuk otomatis.' : ''));
         } else {
-            q("UPDATE tickets SET status='revision', repair_result='temporary', revision_count=revision_count+1 WHERE id=?", [$id]);
-            log_ticket($id, 'foc_temporary', 'FOC/NOC: LINK UP TEMPORER, form dikembalikan ke vendor - ' . $note);
-            notify_vendor((int)$t['vendor_id'], "Tiket {$no} dikembalikan (TEMPORER): {$note}", $id);
-            notify_role('noc', "Tiket {$no}: layanan pulih sementara (temporary), menunggu perbaikan permanent.", $id);
-            noc_notify($id, 'temporary_fix', ['note' => $note]);
             flash('warning', 'LINK UP TEMPORER. Form dikembalikan ke vendor.');
         }
         break;
@@ -194,6 +166,12 @@ switch ($action) {
         need(isset(SIGNOFF_SCOPES[$scope]), $back, 'Scope tanda check tidak valid.');
         $stage = $_POST['stage'] ?? 'region';
         need(isset(SIGNOFF_STAGES[$stage]), $back, 'Tahap tanda check tidak valid.');
+        // Ceklis Inventory hanya boleh diisi pihak Inventory, ceklis FOC hanya oleh FOC/NAM/NOC.
+        if ($stage === WF_STAGE_INVENTORY) {
+            need(has_role('inventory', 'admin'), $back, 'Ceklis material hanya boleh diisi oleh Inventory.');
+        } elseif ($stage === WF_STAGE_FOC) {
+            need(has_role('foc', 'nam', 'noc', 'admin'), $back, 'Ceklist FOC hanya boleh diisi oleh FOC.');
+        }
         $refId = (int)($_POST['ref_id'] ?? 0);
         $mark = $_POST['mark'] ?? 'ok';
         need(in_array($mark, ['ok', 'marked', 'pending'], true), $back, 'Tanda check tidak valid.');

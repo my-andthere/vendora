@@ -72,10 +72,65 @@ Ganti semua password setelah dipakai sungguhan. Ganti juga `NOC_API_KEY` di `con
 4. Vendor mengisi **form laporan** (bagian atas otomatis dari tiket NOC), dokumentasi foto (**Foto Tiang**, **Foto Sinyal**, **Foto OTDR**, **Foto Data Core** — Foto Tiang & Foto OTDR wajib), dan jumlah material terpakai.
    **Waktu Selesai Dikerjakan tidak diisi manual** — dicatat otomatis oleh sistem saat vendor menekan tombol **Kirim Laporan** (`ticket_reports.finished_at`).
    SLA (default 3 jam) dihitung sampai pekerjaan **PERMANENT** → *Sesuai SLA* / *Lewat SLA*. Lihat bagian [SLA](#sla-dihitung-sampai-permanent).
-5. **Inventory** menerima sisa material yang dikembalikan → sistem cek: keluar − kembali = terpakai? → *Sesuai* / *Tidak Sesuai*.
-   (Jika tidak ada material sama sekali, langkah ini dilewati.)
-6. **FOC** mereview: **Permanent** → tiket **langsung ditutup** & **BASTO otomatis terbentuk** (lihat [Alur Vendor MS](#alur-vendor-ms-managed-service)). **Temporary** → form dikembalikan ke vendor (revisi), NOC diberi notifikasi layanan pulih sementara.
+5. **Inventory** mengecek form vendor (lihat [Alur Vendor → Inventory → FOC](#alur-vendor--inventory--foc)):
+   isi form vendor **read-only**, Inventory hanya memberi **checklist + keterangan di samping tiap material**.
+   Semua material wajib dicentang, kalau tidak form **tidak bisa diteruskan ke FOC**.
+6. **FOC** menerima form yang sudah **done** dari Inventory, lalu memberi **checklist + keterangan** di samping tiap kolom
+   **dokumentasi**, kolom **tindakan yang dilakukan**, dan kolom **detail penyebab gangguan**.
+   Semua item wajib dicentang, kalau tidak **link up tidak bisa dilakukan**.
+   **Permanent** → tiket **langsung ditutup** & **BASTO otomatis terbentuk** (lihat [Alur Vendor MS](#alur-vendor-ms-managed-service)). **Temporary** → form dikembalikan ke vendor (revisi), NOC diberi notifikasi layanan pulih sementara.
 7. Tiket yang **melewati SLA** hanya diberi **tanda** lewat badge `Lewat SLA` (merah) — tidak ada penandaan manual.
+
+## Alur Vendor → Inventory → FOC
+Perubahan 20 Nov 2026. Alur penilaian berlapis: **Vendor → Inventory → FOC**.
+
+```
+Vendor kirim laporan ──> inventory_check ──(semua material dicentang)──> foc_review ──(semua item FOC dicentang)──> closed + BASTO
+                            │  (Inventory)                                  │  (FOC)
+                            └─ form vendor READ-ONLY                       └─ form vendor READ-ONLY
+```
+
+### Aturan utama
+| Aturan | Detail |
+|---|---|
+| Form vendor **selalu** masuk Inventory | `WF_STATUS_AFTER_VENDOR = 'inventory_check'` — berlaku untuk Vendor MS maupun non-MS. Tidak ada lagi lompat langsung ke FOC. |
+| Inventory **tidak boleh mengubah** isi form vendor | Form hanya bisa dibuka & disimpan oleh role `vendor` (`vendor_report.php` → `require_role('vendor')`). Inventory/FOC hanya menambah checklist + keterangan. |
+| Inventory wajib **centang semua material** | Kalau ada material yang belum dicentang → pesan: *"Material belum dicentang: … Centang semua material (kolom Cek Inventory) sebelum diteruskan ke FOC."* Tiket **tetap** di `inventory_check`. |
+| FOC hanya menerima form **done** dari Inventory | Syarat: `tickets.inv_result` terisi. Kalau belum → *"Form belum selesai dicek Inventory. FOC hanya menerima form yang sudah DONE dari Inventory."* |
+| FOC wajib **centang semua item** | Item = tiap kategori dokumentasi yang punya foto + *Detail Penyebab Gangguan* + *Detail Tindakan yang Dilakukan*. Kalau belum semua → *"Ceklist FOC belum lengkap: …"* Tiket **tetap** di `foc_review`. |
+
+### Checklist & keterangan
+
+| Tahap | Stage | Scope | Isi per item | Wajib dicentang |
+|---|---|---|---|---|
+| **Inventory** | `inventory` | `material` | 1 item per baris `ticket_materials` — checkbox + keterangan | ✅ semua material |
+| **FOC** | `foc` | `dokumentasi` | 1 item per kategori foto (Foto Tiang / Sinyal / OTDR / Data Core) — checkbox + keterangan | ✅ semua kategori |
+| **FOC** | `foc` | `penyelesaian` | `ref_id=1` → Detail Penyebab Gangguan · `ref_id=2` → Detail Tindakan yang Dilakukan | ✅ keduanya |
+
+Penyimpanan memakai tabel `ticket_signoffs` dengan **stage** baru (`ENUM('region','inventory','cgs','foc')`).
+Tanda check lama (`region` = PIC Region, `cgs` = Evaluasi CGS) tetap ada dan tidak berubah.
+
+### Tampilan
+- **Kolom `Cek Inventory`** di tabel *Material* (`ticket_view.php`) — checkbox + keterangan per material,
+  editable hanya saat tiket berstatus `inventory_check` dan user punya role `inventory`/`admin`.
+- **Kolom `Ceklist FOC`** di samping tiap kolom dokumentasi, *Detail Penyebab Gangguan*, dan *Detail Tindakan yang Dilakukan*.
+- Tombol **`Simpan Ceklist FOC`** menyimpan checklist tanpa melakukan link up (boleh belum lengkap).
+- Badge **`Read-only`** di header *Form Laporan Vendor* menandakan isi form tidak bisa diubah Inventory/FOC.
+- Panel FOC menampilkan daftar item yang **belum dicentang** sebagai pengingat.
+
+### Helper (di [includes/workflow.php](includes/workflow.php))
+| Fungsi | Guna |
+|---|---|
+| `inventory_checklist($ticketId)` | Checklist material + status centang + keterangan. |
+| `inventory_pending_labels($ticketId)` | Label material yang belum dicentang. |
+| `foc_checklist($ticketId)` | Item checklist FOC (dokumentasi + penyebab + tindakan). |
+| `foc_pending_labels($ticketId)` | Label item FOC yang belum dicentang. |
+| `wf_inventory_check_gate($ticketId, $post)` | Validasi POST checklist material → `['ok','missing',...]`. |
+| `wf_foc_check_gate($ticketId, $post)` | Validasi POST checklist FOC → `['ok','missing',...]`. |
+| `wf_run_inventory_check($ticketId, $post, $userId)` | Aksi Inventory: simpan checklist, terima pengembalian, tulis `inventory_checks`, teruskan ke FOC. |
+| `wf_run_foc_eval($ticketId, $post, $userId)` | Simpan checklist FOC saja (tanpa link up). |
+| `wf_run_foc_linkup($ticketId, $post, $userId, $result)` | Aksi link up PERMANEN/TEMPORER — menolak bila form belum done atau checklist belum lengkap. |
+| `inventory_done($t)` / `can_foc_review($u,$t)` / `can_inventory_check($u,$t)` | Syarat akses per tahap. |
 
 ## Status vendor (diatur manual oleh Admin di menu Vendor)
 - **Available** – siap menerima kerja
@@ -348,9 +403,10 @@ Akun demo: `nam / nam123`.
 - `php tools/test_sla.php` – regression suite SLA sampai PERMANENT (42 pemeriksaan: verdict live vs final, badge, sinkronisasi PHP↔SQL, resync kolom, reset saat penugasan).
 - `php tools/test_vendor_ms.php` – regression suite alur Vendor MS (67 pemeriksaan: auto-assign MS, SPK, material langsung, Link Up PERMANEN → tutup + BASTO, tanda check, rekap).
 - `php tools/test_form_concept.php` – regression suite konsept form (48 pemeriksaan: checklist material, batas per tiket, deteksi blur, dua tahap tanda check, role NAM).
+- `php tools/test_inv_foc_flow.php` – regression suite alur Vendor → Inventory → FOC (85 pemeriksaan: form vendor selalu masuk Inventory, gate checklist material, checklist + keterangan per tahap, FOC hanya menerima form done dari Inventory, gate checklist FOC, link up permanen/temporer, isi form vendor read-only).
 - `php tools/check_nested_form.php` – memindai seluruh halaman untuk `<form>` di dalam `<form>` (HTML tidak mengizinkan nested form; browser mengabaikannya sehingga field terkirim ke form yang salah).
 
-Total: **233 pemeriksaan, 0 gagal**.
+Total: **316 pemeriksaan, 0 gagal**.
 
 ## Alur Vendor MS (Managed Service)
 Ada dua tipe vendor:

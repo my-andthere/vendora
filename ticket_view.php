@@ -29,6 +29,13 @@ $active = !in_array($st, ['closed', 'cancelled'], true);
 $pendingReturn = array_filter($materials, fn($m) => (float)$m['qty_issued'] > 0 && $m['qty_returned'] === null && (int)($m['is_direct'] ?? 0) === 0);
 $pendingIssue = array_filter($materials, fn($m) => $m['qty_issued'] === null);
 
+// Alur Vendor -> Inventory -> FOC: checklist per tahap.
+$invChecklist = inventory_checklist($id);            // [line_id => checklist material]
+$canInvCheck  = can_inventory_check($u, $t);         // boleh centang material? (Inventory, saat cek material)
+$focItems     = foc_checklist($id);                  // item checklist FOC (dokumentasi + penyebab + tindakan)
+$focState     = array_column($focItems, null, 'key'); // [key => item]
+$canFocEval   = can_foc_review($u, $t);              // boleh centang evaluation FOC?
+
 $pageTitle = $t['ticket_no'];
 require __DIR__ . '/includes/header.php';
 ?>
@@ -127,6 +134,7 @@ require __DIR__ . '/includes/header.php';
                     <thead class="table-light"><tr><th>Material</th><th class="text-end">Diminta</th><th class="text-end">Dikeluarkan</th>
                         <th class="text-end">Dipakai (vendor)</th>
                         <th class="text-end">Dikembalikan</th><th class="text-end">Selisih</th>
+                        <th class="text-center" style="min-width:170px">Cek Inventory<br><span class="text-muted" style="font-size:.62rem">checklist + keterangan</span></th>
                         <?php if ($canSign): ?><th class="text-center" style="min-width:150px">Tanda Check<br><span class="text-muted" style="font-size:.62rem">PIC Region &rarr; Eval CGS</span></th><?php endif; ?><th></th></tr></thead>
                     <tbody>
                     <?php foreach ($materials as $m):
@@ -134,7 +142,8 @@ require __DIR__ . '/includes/header.php';
                         if ($m['qty_returned'] !== null && $m['qty_used'] !== null) {
                             $diff = (float)$m['qty_issued'] - (float)$m['qty_returned'] - (float)$m['qty_used'];
                         }
-                        $so = $signoffs['material'][(int)$m['id']] ?? []; ?>
+                        $so = $signoffs['material'][(int)$m['id']] ?? [];
+                        $invItem = $invChecklist[(int)$m['id']] ?? null; ?>
                         <tr>
                             <td><?= e($m['code'] . ' - ' . $m['name']) ?> <span class="text-muted">(<?= e($m['unit']) ?>)</span>
                                 <?php if ((int)($m['is_direct'] ?? 0) === 1): ?><span class="badge bg-info text-dark ms-1">MS Langsung</span><?php endif; ?>
@@ -145,6 +154,13 @@ require __DIR__ . '/includes/header.php';
                             <td class="text-end"><?= fmt_qty($m['qty_used']) ?></td>
                             <td class="text-end"><?= fmt_qty($m['qty_returned']) ?></td>
                             <td class="text-end"><?= $diff === null ? '-' : ($diff == 0 ? '<span class="text-success">0</span>' : '<span class="text-danger fw-bold">' . fmt_qty($diff) . '</span>') ?></td>
+                            <td class="text-center">
+                                <?php if ($invItem): ?>
+                                    <?= wf_check_cell('invCheckForm', 'inv', (string)(int)$m['id'], $invItem['checked'], $invItem['note'], $canInvCheck) ?>
+                                <?php else: ?>
+                                    <span class="text-muted small">-</span>
+                                <?php endif; ?>
+                            </td>
                             <?php if ($canSign): ?>
                                 <td class="text-center">
                                     <?= signoff_cell($signoffs, 'material', (int)$m['id'], $m['code'] . ' - ' . $m['name']) ?>
@@ -162,18 +178,27 @@ require __DIR__ . '/includes/header.php';
                     <?php endforeach; ?>
                     </tbody>
                 </table></div>
-                <div class="card-footer bg-white small text-muted">Selisih = Dikeluarkan − Dikembalikan − Dipakai. Harus 0 agar sesuai.</div>
+                <div class="card-footer bg-white small text-muted">
+                    Selisih = Dikeluarkan − Dikembalikan − Dipakai. Harus 0 agar sesuai.
+                    <br><i class="bi bi-info-circle"></i> Kolom <b>Cek Inventory</b> diisi oleh Inventory (checklist + keterangan per material).
+                    Semua material wajib dicentang sebelum form diteruskan ke FOC. Isi form vendor <b>tidak dapat diubah</b> oleh Inventory/FOC.
+                </div>
             <?php endif; ?>
         </div>
 
         <!-- Laporan Vendor -->
         <?php $signoffs = $signoffs ?? ticket_signoffs($id); $canSign = $canSign ?? has_role('noc', 'admin', 'procurement', 'foc'); ?>
         <div class="card mb-3">
-            <div class="card-header bg-white fw-semibold d-flex justify-content-between">
+            <div class="card-header bg-white fw-semibold d-flex justify-content-between flex-wrap gap-2">
                 <span><i class="bi bi-file-earmark-text"></i> Form Laporan Vendor</span>
-                <?php if ($report && $report['submitted_at']): ?>
-                    <span class="small">Tanda Check Penyelesaian: <?= signoff_badge($signoffs['penyelesaian'][0]['status'] ?? null, $signoffs['penyelesaian'][0]['note'] ?? null) ?></span>
-                <?php endif; ?>
+                <span class="d-flex align-items-center gap-2 flex-wrap">
+                    <?php if ($report && $report['submitted_at']): ?>
+                        <span class="badge bg-light text-dark border" title="Isi form vendor tidak dapat diubah oleh Inventory / FOC">
+                            <i class="bi bi-lock"></i> Read-only
+                        </span>
+                        <span class="small">Tanda Check Penyelesaian: <?= signoff_badge($signoffs['penyelesaian'][0]['status'] ?? null, $signoffs['penyelesaian'][0]['note'] ?? null) ?></span>
+                    <?php endif; ?>
+                </span>
             </div>
             <div class="card-body">
                 <?php if (!$report || !$report['submitted_at']): ?>
@@ -193,8 +218,30 @@ require __DIR__ . '/includes/header.php';
                         <div class="mb-2"><b class="small">Upload Bukti Jenis Kerusakan</b><br>
                             <a href="<?= url($report['damage_photo']) ?>" target="_blank"><img src="<?= url($report['damage_photo']) ?>" class="photo-thumb" alt=""></a></div>
                     <?php endif; ?>
-                    <div class="mb-2"><b class="small">Detail Penyebab Gangguan</b><div class="readonly-box small"><?= nl2br(e($report['root_cause'])) ?></div></div>
-                    <div class="mb-2"><b class="small">Detail Tindakan yang Dilakukan</b><div class="readonly-box small"><?= nl2br(e($report['action_taken'])) ?></div></div>
+                    <div class="mb-2">
+                        <b class="small">Detail Penyebab Gangguan</b>
+                        <div class="row g-2">
+                            <div class="col-md-7"><div class="readonly-box small"><?= nl2br(e($report['root_cause'])) ?></div></div>
+                            <div class="col-md-5">
+                                <div class="small text-muted mb-1"><i class="bi bi-clipboard-check"></i> Ceklist FOC</div>
+                                <?= wf_check_cell('focEvalForm', 'foc', 'root_cause',
+                                        $focState['root_cause']['checked'] ?? false,
+                                        $focState['root_cause']['note'] ?? null, $canFocEval) ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <b class="small">Detail Tindakan yang Dilakukan</b>
+                        <div class="row g-2">
+                            <div class="col-md-7"><div class="readonly-box small"><?= nl2br(e($report['action_taken'])) ?></div></div>
+                            <div class="col-md-5">
+                                <div class="small text-muted mb-1"><i class="bi bi-clipboard-check"></i> Ceklist FOC</div>
+                                <?= wf_check_cell('focEvalForm', 'foc', 'action_taken',
+                                        $focState['action_taken']['checked'] ?? false,
+                                        $focState['action_taken']['note'] ?? null, $canFocEval) ?>
+                            </div>
+                        </div>
+                    </div>
                     <?php if ($report['notes']): ?><div class="mb-2"><b class="small">Catatan</b><div class="readonly-box small"><?= nl2br(e($report['notes'])) ?></div></div><?php endif; ?>
                     <div class="small text-muted">Dikirim: <?= fmt_dt($report['submitted_at']) ?></div>
                     <?php if ($canSign): ?>
@@ -206,10 +253,15 @@ require __DIR__ . '/includes/header.php';
                 <?php endif; ?>
                 <?php if ($photos): ?>
                     <hr>
+                    <div class="small text-muted mb-2">
+                        <i class="bi bi-camera"></i> Dokumentasi foto &mdash; kolom <b>Ceklist FOC</b> diisi FOC
+                        (samping tiap kolom dokumentasi). Semua dokumentasi wajib dicentang sebelum link up.
+                    </div>
                     <?php foreach (PHOTO_CATEGORIES as $cat => $label):
                         $list = array_filter($photos, fn($p) => $p['category'] === $cat);
                         if (!$list) continue;
-                        $firstId = (int)reset($list)['id']; ?>
+                        $firstId = (int)reset($list)['id'];
+                        $focKey = 'doc_' . $cat; ?>
                         <div class="small fw-semibold mb-1"><?= e($label) ?></div>
                         <div class="row g-2 mb-3">
                             <?php foreach ($list as $p): ?>
@@ -223,6 +275,12 @@ require __DIR__ . '/includes/header.php';
                         <?php if ($canSign): ?>
                             <div class="mb-2"><?= signoff_cell($signoffs, 'dokumentasi', $firstId, $label) ?></div>
                         <?php endif; ?>
+                        <div class="mb-3">
+                            <div class="small text-muted mb-1"><i class="bi bi-clipboard-check"></i> Ceklist FOC &mdash; <?= e($label) ?></div>
+                            <?= wf_check_cell('focEvalForm', 'foc', $focKey,
+                                    $focState[$focKey]['checked'] ?? false,
+                                    $focState[$focKey]['note'] ?? null, $canFocEval) ?>
+                        </div>
                     <?php endforeach; ?>
                 <?php endif; ?>
             </div>
@@ -325,9 +383,26 @@ require __DIR__ . '/includes/header.php';
 
             <?php if ($st === 'inventory_check'): ?>
                 <div class="card mb-3 border-warning"><div class="card-body">
-                    <h6><i class="bi bi-box-arrow-in-left"></i> Terima Kembalian & Cek Material</h6>
-                    <p class="small text-muted">Masukkan jumlah material yang dikembalikan vendor. Sistem membandingkan dengan material terpakai di laporan vendor.</p>
-                    <form method="post" action="<?= $actionUrl ?>" id="invForm"><?= $hidden ?>
+                    <h6><i class="bi bi-box-arrow-in-left"></i> Cek Material (Inventory)</h6>
+                    <p class="small text-muted">
+                        Form laporan vendor bisa dilihat, tapi <b>isi form vendor tidak dapat diubah</b>.
+                        <?php if ($pendingReturn): ?>
+                            Masukkan jumlah material yang dikembalikan vendor (dibandingkan dengan material terpakai di laporan vendor).
+                        <?php else: ?>
+                            Tidak ada material yang perlu dikembalikan.
+                        <?php endif; ?>
+                    </p>
+                    <div class="alert alert-warning small py-2">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Centang <b>semua material</b> di tabel <b>Material</b> (kolom <b>Cek Inventory</b> &mdash; checklist + keterangan).
+                        <?php $pendingInv = inventory_pending_labels($id); ?>
+                        <?php if ($pendingInv): ?>
+                            <br><b>Belum dicentang (<?= count($pendingInv) ?>):</b> <?= e(implode(', ', $pendingInv)) ?>
+                        <?php else: ?>
+                            <br><span class="text-success">Semua material sudah dicentang.</span>
+                        <?php endif; ?>
+                    </div>
+                    <form method="post" action="<?= $actionUrl ?>" id="invCheckForm"><?= $hidden ?>
                         <?php foreach ($pendingReturn as $m): ?>
                             <div class="border rounded p-2 mb-2 small inv-line" data-issued="<?= (float)$m['qty_issued'] ?>" data-used="<?= (float)$m['qty_used'] ?>">
                                 <div class="fw-semibold"><?= e($m['name']) ?> (<?= e($m['unit']) ?>)</div>
@@ -345,7 +420,7 @@ require __DIR__ . '/includes/header.php';
                             <option value="tidak_sesuai">Tidak Sesuai</option>
                         </select>
                         <textarea name="note" class="form-control form-control-sm mb-2" placeholder="Catatan (wajib jika tidak sesuai)"></textarea>
-                        <button name="action" value="inventory_check" class="btn btn-warning btn-sm w-100">Simpan & Teruskan ke FOC</button>
+                        <button name="action" value="inventory_check" class="btn btn-warning btn-sm w-100">Simpan Cek &amp; Teruskan ke FOC</button>
                     </form>
                 </div></div>
                 <script>
@@ -368,20 +443,44 @@ require __DIR__ . '/includes/header.php';
             <?php endif; ?>
         <?php endif; ?>
 
-        <?php /* ---------- FOC / NOC: LINK UP ---------- */ if (has_role('foc', 'admin', 'noc') && $st === 'foc_review'): ?>
+        <?php /* ---------- FOC / NOC: LINK UP ---------- */ if (has_role('foc', 'admin', 'noc', 'nam') && $st === 'foc_review'): ?>
             <div class="card mb-3 border-success"><div class="card-body">
                 <h6><i class="bi bi-clipboard-check"></i> Link Up (FOC / NOC)</h6>
-                <p class="small text-muted">Periksa form, foto, dan hasil pekerjaan vendor. Nyatakan <b>LINK UP PERMANEN</b> atau <b>LINK UP TEMPORER</b>.</p>
-                <?php if ($t['inv_result'] === 'tidak_sesuai'): ?><div class="alert alert-danger small py-2">Perhatian: hasil cek inventory <b>TIDAK SESUAI</b>.</div><?php endif; ?>
-                <form method="post" action="<?= $actionUrl ?>"><?= $hidden ?>
-                    <textarea name="note" class="form-control form-control-sm mb-2" rows="3" placeholder="Catatan review (wajib jika temporer)"></textarea>
-                    <div class="d-grid gap-2">
-                        <button name="action" value="foc_permanent" class="btn btn-success"
-                                onclick="return confirm('Nyatakan LINK UP PERMANEN? Tiket akan ditutup & BASTO terbentuk otomatis.')"><i class="bi bi-check-circle"></i> LINK UP | PERMANEN</button>
-                        <button name="action" value="foc_temporary" class="btn btn-outline-danger"
-                                onclick="return confirm('Nyatakan LINK UP TEMPORER? Form dikembalikan ke vendor.')"><i class="bi bi-arrow-counterclockwise"></i> LINK UP | TEMPORER</button>
+                <?php if (!inventory_done($t)): ?>
+                    <div class="alert alert-danger small py-2">
+                        <i class="bi bi-exclamation-triangle"></i> Form <b>belum selesai dicek Inventory</b> &mdash; FOC hanya menerima form yang sudah <b>done</b> dari Inventory.
                     </div>
-                </form>
+                <?php else: ?>
+                    <p class="small text-muted">
+                        Form vendor sudah <b>done</b> oleh Inventory dan <b>tidak dapat diedit</b> oleh FOC.
+                        Centang <b>semua</b> item ceklist FOC (di samping kolom dokumentasi, tindakan yang dilakukan,
+                        dan detail penyebab gangguan) sebelum melanjutkan ke tahap selanjutnya.
+                    </p>
+                    <?php $pendingFoc = foc_pending_labels($id); ?>
+                    <?php if ($pendingFoc): ?>
+                        <div class="alert alert-warning small py-2">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <b>Belum dicentang (<?= count($pendingFoc) ?>):</b> <?= e(implode(', ', $pendingFoc)) ?>
+                        </div>
+                    <?php else: ?>
+                        <div class="alert alert-success small py-2">
+                            <i class="bi bi-check2-circle"></i> Semua item FOC sudah dicentang.
+                        </div>
+                    <?php endif; ?>
+                    <?php if ($t['inv_result'] === 'tidak_sesuai'): ?><div class="alert alert-danger small py-2">Perhatian: hasil cek inventory <b>TIDAK SESUAI</b>.</div><?php endif; ?>
+                    <form method="post" action="<?= $actionUrl ?>" id="focEvalForm"><?= $hidden ?>
+                        <textarea name="note" class="form-control form-control-sm mb-2" rows="3" placeholder="Catatan review (wajib jika temporer)"></textarea>
+                        <div class="d-grid gap-2">
+                            <button name="action" value="save_foc_eval" class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-save"></i> Simpan Ceklist FOC
+                            </button>
+                            <button name="action" value="foc_permanent" class="btn btn-success"
+                                onclick="return confirm('Nyatakan LINK UP PERMANEN? Tiket akan ditutup & BASTO terbentuk otomatis.')"><i class="bi bi-check-circle"></i> LINK UP | PERMANEN</button>
+                            <button name="action" value="foc_temporary" class="btn btn-outline-danger"
+                                onclick="return confirm('Nyatakan LINK UP TEMPORER? Form dikembalikan ke vendor.')"><i class="bi bi-arrow-counterclockwise"></i> LINK UP | TEMPORER</button>
+                        </div>
+                    </form>
+                <?php endif; ?>
             </div></div>
         <?php endif; ?>
 

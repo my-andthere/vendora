@@ -125,7 +125,7 @@ $res = create_ticket([
     'activity_type' => 'Troubleshooting',
     'province' => 'DKI Jakarta',
     'reported_at' => now(),
-], 'nac', null);
+], 'manual', null);
 $ticketId = (int)($res['id'] ?? 0);
 $created['tickets'][] = $ticketId;
 chk($ticketId > 0, 'tiket dibuat');

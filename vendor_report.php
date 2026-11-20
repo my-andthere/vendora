@@ -207,8 +207,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // SLA baru dihitung sampai tiket dinyatakan PERMANENT.
                     q('UPDATE tickets SET submitted_at=NOW() WHERE id=?', [$id]);
                 }
+                // Alur baru (2026-11-20): Vendor -> Inventory -> FOC.
+                // Form vendor SELALU masuk ke Inventory dulu, baru Inventory yang
+                // meneruskan ke FOC setelah semua material dicentang.
                 $needReturn = array_filter($lines, fn($l) => (float)$l['qty_issued'] > 0 && $l['qty_returned'] === null && (int)($l['is_direct'] ?? 0) === 0);
-                $next = $needReturn ? 'inventory_check' : 'foc_review';
+                $next = WF_STATUS_AFTER_VENDOR;
                 q('UPDATE tickets SET status=? WHERE id=?', [$next, $id]);
                 $rev = $t['status'] === 'revision' ? ' (perbaikan ulang)' : '';
                 $lateNote = '';
@@ -218,14 +221,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 log_ticket($id, 'report_submitted', 'Vendor mengirim laporan pekerjaan' . $rev
                     . ' - selesai dikerjakan ' . fmt_dt($data['finished_at']) . $lateNote);
                 if ($next === 'inventory_check') {
-                    notify_role('inventory', "Tiket {$t['ticket_no']}: vendor selesai, terima kembalian material & cek pemakaian.", $id);
+                    notify_role('inventory', "Tiket {$t['ticket_no']}: vendor selesai. Cek form & material (ceklist per material) sebelum diteruskan ke FOC{$rev}.", $id);
                 } else {
                     notify_role('foc', "Tiket {$t['ticket_no']} siap direview FOC{$rev}.", $id);
                 }
                 notify_role('noc', "Tiket {$t['ticket_no']}: vendor melaporkan pekerjaan selesai{$rev}.", $id);
                 noc_notify($id, 'work_submitted', ['revision' => (int)$t['revision_count']]);
                 db()->commit();
-                flash('success', 'Laporan terkirim.' . ($next === 'inventory_check' ? ' Silakan kembalikan sisa material ke inventory.' : ' Menunggu review FOC.'));
+                flash('success', 'Laporan terkirim. Form masuk ke Inventory untuk dicek - Inventory baru meneruskan ke FOC.');
                 redirect('ticket_view.php?id=' . $id);
             }
         }
@@ -260,6 +263,13 @@ require __DIR__ . '/includes/header.php';
 </div>
 <?php endif; ?>
 <?php if ($errors): ?><div class="alert alert-danger"><b>Laporan belum bisa dikirim:</b><ul class="mb-0"><?php foreach ($errors as $er): ?><li><?= e($er) ?></li><?php endforeach; ?></ul></div><?php endif; ?>
+<div class="alert alert-info small">
+    <i class="bi bi-diagram-3"></i>
+    <b>Alur penilaian:</b> Vendor &rarr; <b>Inventory</b> (cek material) &rarr; <b>FOC</b> (link up).
+    Setelah Anda menekan &ldquo;Kirim Laporan&rdquo;, form <b>terkirim ke Inventory</b> untuk dicek.
+    Isi form yang sudah Anda kirim <b>tidak dapat diubah</b> oleh Inventory maupun FOC &mdash; mereka hanya memberi
+    <b>checklist + keterangan</b> di samping tiap material / dokumentasi.
+</div>
 
 <form method="post" enctype="multipart/form-data">
     <?= csrf_field() ?>

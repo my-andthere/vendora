@@ -278,13 +278,16 @@ CREATE TABLE master_options (
 -- Tanda check / keterangan atas hasil pekerjaan vendor.
 -- scope: material | dokumentasi | penyelesaian | sla
 -- ref_id: id baris ticket_materials / ticket_photos (0 = berlaku umum)
--- stage: region = tanda check PIC Region (fase 1) | cgs = evaluasi internal CGS (FOC/NAM/NOC, fase 2)
+-- stage: region = tanda check PIC Region (fase 1)
+--        inventory = ceklis + keterangan tiap material (Inventory, wajib sebelum ke FOC)
+--        cgs = evaluasi internal CGS (FOC/NAM/NOC, fase 2)
+--        foc = ceklis + keterangan tiap dokumentasi / penyebab / tindakan (FOC)
 CREATE TABLE ticket_signoffs (
   id INT AUTO_INCREMENT PRIMARY KEY,
   ticket_id INT NOT NULL,
   scope ENUM('material','dokumentasi','penyelesaian','sla') NOT NULL,
   ref_id INT NOT NULL DEFAULT 0,
-  stage ENUM('region','cgs') NOT NULL DEFAULT 'region',
+  stage ENUM('region','inventory','cgs','foc') NOT NULL DEFAULT 'region',
   status ENUM('pending','ok','marked') NOT NULL DEFAULT 'pending',
   note VARCHAR(255) NULL,
   checked_by INT NULL,
