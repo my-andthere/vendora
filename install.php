@@ -38,11 +38,11 @@ try {
     // ---------- Data contoh ----------
     // Region (wilayah) -> 1 region berisi beberapa kota
     $regions = [
-        ['Central', 'CENTRAL', 'Jawa Barat, DKI Jakarta dan sekitarnya'],
-        ['East', 'EAST', 'Jawa Tengah dan Jawa Timur'],
-        ['West', 'WEST', 'Sumatera (Medan dan sekitarnya)'],
+        ['Central', 'CENTRAL', 'Jawa Barat, DKI Jakarta dan sekitarnya', 'WITA'],
+        ['East', 'EAST', 'Jawa Tengah dan Jawa Timur', 'WIT'],
+        ['West', 'WEST', 'Sumatera (Medan dan sekitarnya)', 'WIB'],
     ];
-    $st = $pdo->prepare('INSERT INTO regions (name, code, description) VALUES (?,?,?)');
+    $st = $pdo->prepare('INSERT INTO regions (name, code, description, timezone) VALUES (?,?,?,?)');
     foreach ($regions as $r) $st->execute($r);
     $regionId = [];
     foreach ($pdo->query('SELECT id, name FROM regions')->fetchAll(PDO::FETCH_ASSOC) as $r) {
@@ -51,14 +51,14 @@ try {
 
     // name, region
     $cities = [
-        ['Jakarta', 'Central'],
-        ['Bandung', 'Central'],
-        ['Surabaya', 'East'],
-        ['Medan', 'West'],
-        ['Semarang', 'East'],
+        ['Jakarta', 'Central', 'WIB'],
+        ['Bandung', 'Central', 'WIB'],
+        ['Surabaya', 'East', 'WITA'],
+        ['Medan', 'West', 'WIB'],
+        ['Semarang', 'East', 'WIB'],
     ];
-    $st = $pdo->prepare('INSERT INTO cities (name, region_id) VALUES (?,?)');
-    foreach ($cities as $c) $st->execute([$c[0], $regionId[$c[1]]]);
+    $st = $pdo->prepare('INSERT INTO cities (name, region_id, timezone) VALUES (?,?,?)');
+    foreach ($cities as $c) $st->execute([$c[0], $regionId[$c[1]], $c[2]]);
 
     $vendors = [
         // name, city_id, pic, phone, status, workload_limit (batas global / cadangan)

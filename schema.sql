@@ -23,6 +23,8 @@ CREATE TABLE regions (
   name VARCHAR(100) NOT NULL UNIQUE,
   code VARCHAR(20) NULL,
   description VARCHAR(255) NULL,
+  -- zona waktu operasional region: WIB (UTC+7) / WITA (UTC+8) / WIT (UTC+9)
+  timezone VARCHAR(10) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
@@ -33,6 +35,8 @@ CREATE TABLE cities (
   region_id INT NULL,
   -- kota utama (ibu kota wilayah): pusat layanan vendor MS
   is_primary TINYINT(1) NOT NULL DEFAULT 0,
+  -- zona waktu kota (WIB/WITA/WIT); NULL = ikut zona waktu region
+  timezone VARCHAR(10) NULL,
   FOREIGN KEY (region_id) REFERENCES regions(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 

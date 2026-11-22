@@ -9,6 +9,7 @@ if (!$t || !can_view_ticket($u, $t)) {
 $id = (int)$t['id'];
 $tRegionId = city_region_id((int)($t['city_id'] ?? 0));
 $tRegionName = region_name($tRegionId);
+$cityTz = city_timezone((int)($t['city_id'] ?? 0));
 $workTime = work_time($t);
 $role = $u['role'];
 $st = $t['status'];
@@ -60,7 +61,10 @@ require __DIR__ . '/includes/header.php';
                     <tr><th>Jenis Kegiatan</th><td><?= e($t['activity_type'] ?: '-') ?></td></tr>
                     <tr><th>Kota</th><td><?= e($t['city_name']) ?> <?= $t['city_is_primary'] ? '<span class="badge bg-primary text-dark">Kota Utama</span>' : '' ?></td></tr>
                     <tr><th>Provinsi</th><td><?= e($t['province'] ?: '-') ?></td></tr>
-                    <tr><th>Region</th><td><?= $tRegionName !== '-' ? e($tRegionName) : '<span class="text-muted">-</span>' ?></td></tr>
+                    <tr><th>Region</th><td><?= $tRegionName !== '-' ? e($tRegionName) : '<span class="text-muted">-</span>' ?>
+                        <?= $tRegionId ? ' ' . region_tz_badge($tRegionId) : '' ?></td></tr>
+                    <tr><th>Zona Waktu</th><td><?= city_tz_badge((int)($t['city_id'] ?? 0)) ?>
+                        <span class="small text-muted">waktu lokal kota</span></td></tr>
                     <tr><th>Pelanggan / Site</th><td><?= e($t['customer_name'] ?: '-') ?> <?= $t['customer_id'] ? '(' . e($t['customer_id']) . ')' : '' ?></td></tr>
                     <tr><th>Jenis Masalah</th><td><?= e($t['problem_type']) ?> <?= priority_badge($t['priority']) ?></td></tr>
                     <tr><th>Lokasi</th><td><?= nl2br(e($t['location'])) ?>
@@ -68,13 +72,13 @@ require __DIR__ . '/includes/header.php';
                             <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=<?= e($t['latitude'] . ',' . $t['longitude']) ?>" class="ms-1 small"><i class="bi bi-geo-alt"></i> Maps</a>
                         <?php endif; ?></td></tr>
                     <tr><th>Deskripsi</th><td><?= nl2br(e($t['description'] ?: '-')) ?></td></tr>
-                    <tr><th>Dilaporkan</th><td><?= fmt_dt($t['reported_at']) ?></td></tr>
+                    <tr><th>Dilaporkan</th><td><?= fmt_dt_tz($t['reported_at'], $cityTz) ?></td></tr>
                     <tr><th>Vendor</th><td><?= $t['vendor_name'] ? e($t['vendor_name']) . ' ' . vendor_type_badge($t['vendor_type']) . ($t['vendor_pic'] ? ' · PIC ' . e($t['vendor_pic']) : '') . ($t['vendor_phone'] ? ' · ' . e($t['vendor_phone']) : '') : '<span class="text-danger">Belum ada vendor</span>' ?></td></tr>
                     <tr><th>Ditugaskan ke Vendor</th><td><?= fmt_dt($t['assigned_at']) ?></td></tr>
                     <tr><th>Diterima Vendor</th><td>
                         <?php if ($t['accepted_at']): ?>
                             <i class="bi bi-check2-circle text-success"></i>
-                            <b><?= fmt_dt($t['accepted_at']) ?></b>
+                            <b><?= fmt_dt_tz($t['accepted_at'], $cityTz) ?></b>
                             <span class="text-muted">— vendor menekan tombol <b>Terima &amp; Mulai Kerjakan</b></span>
                         <?php else: ?>
                             <span class="text-muted">Belum ada vendor yang menekan tombol <b>Terima &amp; Mulai Kerjakan</b></span>
@@ -99,7 +103,7 @@ require __DIR__ . '/includes/header.php';
                         <?= work_time_badge($t) ?>
                         <span class="small text-muted">— berjalan terus sejak <?= fmt_dt($workTime['start']) ?>, berhenti hanya saat <b>PERMANENT</b><?php if ($workTime['permanent']): ?> (<?= fmt_dt($t['completed_at']) ?>)<?php endif; ?></span>
                     </td></tr>
-                    <tr><th>Laporan Dikirim</th><td><?= fmt_dt($t['submitted_at']) ?>
+                    <tr><th>Laporan Dikirim</th><td><?= fmt_dt_tz($t['submitted_at'], $cityTz) ?>
                         <?php if ($t['submitted_at'] && $t['sla_deadline']):
                             $diff = (int)round((strtotime($t['submitted_at']) - strtotime($t['sla_deadline'])) / 60); ?>
                             <span class="small text-muted">(<?= $diff > 0 ? 'terlambat ' . fmt_duration($diff) : 'lebih cepat ' . fmt_duration(-$diff) ?> dari batas SLA)</span>
@@ -113,7 +117,7 @@ require __DIR__ . '/includes/header.php';
                             <span class="text-muted small">Belum terbentuk (otomatis setelah tiket dinyatakan PERMANENT)</span>
                         <?php endif; ?>
                     </td></tr>
-                    <tr><th>Selesai</th><td><?= fmt_dt($t['completed_at']) ?></td></tr>
+                    <tr><th>Selesai</th><td><?= fmt_dt_tz($t['completed_at'], $cityTz) ?></td></tr>
                 </table>
             </div>
         </div>

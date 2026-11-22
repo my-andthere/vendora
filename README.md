@@ -158,6 +158,28 @@ Pengelolaan (menu **Region**, khusus Admin):
 - Kolom `vendors.workload_limit` kini hanya **cadangan** untuk kota yang belum punya region.
 - Dashboard vendor menampilkan beban kerja per region masing-masing.
 
+## Zona waktu region & kota
+Setiap region dan kota punya **zona waktu operasional** agar jam kerja/timestamp ditampilkan sesuai wilayahnya.
+
+| Label | Offset | Region |
+|---|---|---|
+| **WIB** | UTC+7 | **West** (Sumatera) |
+| **WITA** | UTC+8 | **Central** |
+| **WIT** | UTC+9 | **East** |
+
+Tabel terkait:
+- `regions.timezone` — zona waktu region (`WIB` / `WITA` / `WIT`), boleh NULL.
+- `cities.timezone` — zona waktu kota, boleh NULL → otomatis mengikuti zona waktu region.
+
+Aturan resolusi kota (berurutan): **kolom kota** → **lokasi geografis kota** → **zona waktu region** → fallback `WIB`.
+Contoh pemetaan geografis: Jakarta/Bandung/Medan/Semarang/Pontianak → **WIB**; Surabaya/Makassar/Manado/Denpasar/Balikpapan → **WITA**; Ambon/Ternate/Jayapura → **WIT**.
+
+Penyimpanan & tampilan:
+- Semua waktu disimpan dalam waktu aplikasi (`Asia/Jakarta`); tampilan digeser sesuai offset zona tujuan lewat `fmt_dt_tz($dt, $tz)`.
+- Detail tiket menampilkan baris **Zona Waktu** (waktu lokal kota) + badge zona waktu region.
+- Halaman **Region** & **Kota** punya selector zona waktu (mode **Otomatis** memakai aturan di atas).
+- Migrasi `migrate_schema()` di `includes/bootstrap.php` menambah kolom baru (bila belum ada) lalu mengisi zona waktu kosong secara idempoten — data lama ikut terisi tanpa menimpa pilihan manual admin.
+
 ## Integrasi NOC
 **Masuk (NOC → Procurement)** — `api/tickets.php`, header `X-API-KEY`:
 ```
@@ -404,9 +426,10 @@ Akun demo: `nam / nam123`.
 - `php tools/test_vendor_ms.php` – regression suite alur Vendor MS (67 pemeriksaan: auto-assign MS, SPK, material langsung, Link Up PERMANEN → tutup + BASTO, tanda check, rekap).
 - `php tools/test_form_concept.php` – regression suite konsept form (48 pemeriksaan: checklist material, batas per tiket, deteksi blur, dua tahap tanda check, role NAM).
 - `php tools/test_inv_foc_flow.php` – regression suite alur Vendor → Inventory → FOC (85 pemeriksaan: form vendor selalu masuk Inventory, gate checklist material, checklist + keterangan per tahap, FOC hanya menerima form done dari Inventory, gate checklist FOC, link up permanen/temporer, isi form vendor read-only).
+- `php tools/test_timezone.php` – regression suite zona waktu region & kota (35 pemeriksaan: mapping East=WIT/West=WIB/Central=WITA, resolusi kota kolom > geografi > region, badge, pergeseran waktu).
 - `php tools/check_nested_form.php` – memindai seluruh halaman untuk `<form>` di dalam `<form>` (HTML tidak mengizinkan nested form; browser mengabaikannya sehingga field terkirim ke form yang salah).
 
-Total: **316 pemeriksaan, 0 gagal**.
+Total: **351 pemeriksaan, 0 gagal**.
 
 ## Alur Vendor MS (Managed Service)
 Ada dua tipe vendor:

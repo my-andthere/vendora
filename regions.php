@@ -20,16 +20,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name = trim($_POST['name'] ?? '');
         $code = trim($_POST['code'] ?? '');
         $desc = trim($_POST['description'] ?? '');
+        $tz = strtoupper(trim($_POST['timezone'] ?? ''));
+        if ($tz !== '' && !array_key_exists($tz, app_timezones())) $tz = '';
+        if ($tz === '') $tz = region_default_timezone($name) ?: DEFAULT_TIMEZONE;
         $id = (int)($_POST['id'] ?? 0);
         if ($name === '') {
             flash('danger', 'Nama region wajib diisi.');
         } elseif (q('SELECT 1 FROM regions WHERE name=? AND id<>?', [$name, $id])->fetch()) {
             flash('danger', 'Nama region sudah dipakai.');
         } elseif ($id) {
-            q('UPDATE regions SET name=?, code=?, description=? WHERE id=?', [$name, $code ?: null, $desc ?: null, $id]);
+            q('UPDATE regions SET name=?, code=?, description=?, timezone=? WHERE id=?', [$name, $code ?: null, $desc ?: null, $tz, $id]);
             flash('success', 'Region diperbarui.');
         } else {
-            q('INSERT INTO regions (name, code, description) VALUES (?,?,?)', [$name, $code ?: null, $desc ?: null]);
+            q('INSERT INTO regions (name, code, description, timezone) VALUES (?,?,?,?)', [$name, $code ?: null, $desc ?: null, $tz]);
             flash('success', 'Region ditambahkan.');
         }
     } elseif ($act === 'delete_region') {
@@ -78,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $detail = [];
 foreach ($regions as $r) {
     $rid = (int)$r['id'];
-    $rc = q('SELECT id, name FROM cities WHERE region_id=? ORDER BY name', [$rid])->fetchAll();
+    $rc = q('SELECT id, name, timezone FROM cities WHERE region_id=? ORDER BY name', [$rid])->fetchAll();
     $rv = q("SELECT vr.vendor_id, vr.workload_limit, v.name, v.status,
                     (SELECT COUNT(*) FROM tickets t JOIN cities c ON c.id=t.city_id
                       WHERE t.vendor_id=vr.vendor_id AND c.region_id=vr.region_id
@@ -106,6 +109,15 @@ require __DIR__ . '/includes/header.php';
                 <input type="hidden" name="act" value="save_region">
                 <div class="mb-2"><label class="form-label">Nama Region *</label><input name="name" class="form-control" required></div>
                 <div class="mb-2"><label class="form-label">Kode</label><input name="code" class="form-control" placeholder="CENTRAL / EAST / WEST"></div>
+                <div class="mb-2"><label class="form-label">Zona Waktu</label>
+                    <select name="timezone" class="form-select">
+                        <option value="">Otomatis (dari nama region)</option>
+                        <?php foreach (app_timezones() as $tz => $off): ?>
+                            <option value="<?= $tz ?>"><?= $tz ?> (UTC+<?= $off ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text">East = WIT, West = WIB, Central = WITA.</div>
+                </div>
                 <div class="mb-2"><label class="form-label">Deskripsi</label><textarea name="description" class="form-control" rows="2"></textarea></div>
                 <button class="btn btn-primary w-100">Simpan Region</button>
             </form>
@@ -133,6 +145,7 @@ require __DIR__ . '/includes/header.php';
             <div class="card-header d-flex justify-content-between align-items-center">
                 <div><b><?= e($r['name']) ?></b>
                     <?php if ($r['code']): ?><span class="badge bg-secondary ms-1"><?= e($r['code']) ?></span><?php endif; ?>
+                    <?= region_tz_badge($rid) ?>
                     <div class="small text-muted"><?= e($r['description'] ?? '') ?></div>
                 </div>
                 <div class="text-nowrap">
@@ -151,10 +164,13 @@ require __DIR__ . '/includes/header.php';
                         <?php foreach ($d['cities'] as $c): ?>
                             <div class="d-flex justify-content-between align-items-center border-bottom py-1">
                                 <span class="small"><?= e($c['name']) ?></span>
-                                <form method="post" class="d-inline" data-confirm="Keluarkan kota ini dari region?"><?= csrf_field() ?>
-                                    <input type="hidden" name="act" value="remove_city"><input type="hidden" name="region_id" value="<?= $rid ?>">
-                                    <input type="hidden" name="city_id" value="<?= $c['id'] ?>">
-                                    <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-x"></i></button></form>
+                                <span class="d-flex align-items-center gap-1">
+                                    <?= tz_badge($c['timezone'] ?: city_timezone((int)$c['id'])) ?>
+                                    <form method="post" class="d-inline" data-confirm="Keluarkan kota ini dari region?"><?= csrf_field() ?>
+                                        <input type="hidden" name="act" value="remove_city"><input type="hidden" name="region_id" value="<?= $rid ?>">
+                                        <input type="hidden" name="city_id" value="<?= $c['id'] ?>">
+                                        <button class="btn btn-sm btn-outline-danger py-0 px-1"><i class="bi bi-x"></i></button></form>
+                                </span>
                             </div>
                         <?php endforeach; ?>
                         <form method="post" class="mt-2 d-flex gap-1"><?= csrf_field() ?>
@@ -220,16 +236,26 @@ require __DIR__ . '/includes/header.php';
     <div class="modal-body">
         <div class="mb-2"><label class="form-label">Nama Region *</label><input name="name" id="r_name" class="form-control" required></div>
         <div class="mb-2"><label class="form-label">Kode</label><input name="code" id="r_code" class="form-control"></div>
+        <div class="mb-2"><label class="form-label">Zona Waktu</label>
+            <select name="timezone" id="r_timezone" class="form-select">
+                <?php foreach (app_timezones() as $tz => $off): ?>
+                    <option value="<?= $tz ?>"><?= $tz ?> (UTC+<?= $off ?>)</option>
+                <?php endforeach; ?>
+            </select>
+            <div class="form-text">East = WIT, West = WIB, Central = WITA.</div>
+        </div>
         <div class="mb-2"><label class="form-label">Deskripsi</label><textarea name="description" id="r_description" class="form-control" rows="2"></textarea></div>
     </div>
     <div class="modal-footer"><button class="btn btn-primary">Simpan</button></div>
 </form></div></div>
 <script>
 function editRegion(r) {
-    document.getElementById('r_id').value = r.id;
+    document.getElementByById('r_id').value = r.id;
     document.getElementById('r_name').value = r.name || '';
     document.getElementById('r_code').value = r.code || '';
     document.getElementById('r_description').value = r.description || '';
+    var tz = document.getElementById('r_timezone');
+    if (r.timezone) { tz.value = r.timezone; } else { tz.selectedIndex = 0; }
 }
 </script>
 <?php require __DIR__ . '/includes/footer.php'; ?>

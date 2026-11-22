@@ -99,6 +99,20 @@ function fmt_dt(?string $dt): string
     return $dt ? date('d/m/Y H:i', strtotime($dt)) : '-';
 }
 
+/**
+ * Format waktu dalam zona waktu tertentu (WIB/WITA/WIT).
+ * Data disimpan dalam waktu aplikasi (Asia/Jakarta = WIB), jadi digeser sesuai offset zona tujuan.
+ */
+function fmt_dt_tz(?string $dt, ?string $tz = null): string
+{
+    if (!$dt || $dt === '0000-00-00 00:00:00') return '-';
+    $ts = strtotime($dt);
+    if ($ts === false) return '-';
+    $tz = strtoupper((string)$tz) ?: DEFAULT_TIMEZONE;
+    $diff = tz_offset($tz) - tz_offset(DEFAULT_TIMEZONE);
+    return date('d/m/Y H:i', strtotime(($diff >= 0 ? '+' : '-') . abs($diff) . ' hours', $ts)) . ' ' . $tz;
+}
+
 function fmt_duration(int $minutes): string
 {
     $neg = $minutes < 0;
@@ -692,6 +706,162 @@ function region_name(?int $regionId): string
     return $names[$regionId] ?? '-';
 }
 
+// ------------------------------------------------------------
+// Zona waktu (WIB / WITA / WIT)
+// ------------------------------------------------------------
+
+/** Daftar zona waktu yang dipakai: label => offset UTC dalam jam. */
+function app_timezones(): array
+{
+    return ['WIB' => 7, 'WITA' => 8, 'WIT' => 9];
+}
+
+/** Zona waktu fallback bila data tidak lengkap. */
+const DEFAULT_TIMEZONE = 'WIB';
+
+/** Offset UTC (jam) dari label zona waktu. */
+function tz_offset(?string $tz): int
+{
+    return app_timezones()[strtoupper((string)$tz)] ?? app_timezones()[DEFAULT_TIMEZONE];
+}
+
+/**
+ * Zona waktu default sebuah region berdasarkan nama/label region.
+ * East = WIT, West = WIB, Central = WITA.
+ */
+function region_default_timezone(?string $name): ?string
+{
+    $n = strtolower(trim((string)$name));
+    if ($n === '') return null;
+    if (str_contains($n, 'east') || str_contains($n, 'timur')) return 'WIT';
+    if (str_contains($n, 'west') || str_contains($n, 'barat')) return 'WIB';
+    if (str_contains($n, 'central') || str_contains($n, 'tengah')) return 'WITA';
+    return null;
+}
+
+/**
+ * Zona waktu default sebuah kota berdasarkan lokasi geografisnya.
+ * Kota yang tidak ada di daftar mewarisi zona waktu region-nya.
+ */
+function city_default_timezone(?string $name): ?string
+{
+    $n = strtolower(trim((string)$name));
+    if ($n === '') return null;
+
+    $wit = ['ambon', 'ternate', 'sorong', 'jayapura', 'manokwari', 'timika', 'merauke', 'tual', 'dobo'];
+    $wita = [
+        'surabaya', 'sidoarjo', 'gresik', 'malang', 'kediri', 'jember', 'probolinggo',
+        'makassar', 'maros', 'parepare', 'palopo', 'manado', 'gorontalo', 'kendari', 'palu', 'mamuju',
+        'denpasar', 'badung', 'gianyar', 'mataram', 'lombok', 'kupang', 'sumba', 'flores',
+        'balikpapan', 'samarinda', 'berau', 'kutai', 'banjarmasin', 'banjarbaru', 'palangka raya',
+    ];
+    $wib = [
+        'jakarta', 'bandung', 'bogor', 'depok', 'bekasi', 'tangerang', 'cikarang', 'purwakarta', 'sumedang',
+        'semarang', 'surakarta', 'solo', 'yogyakarta', 'magelang', 'salatiga', 'tegal', 'cilacap', 'purwokerto',
+        'medan', 'aceh', 'padang', 'pekanbaru', 'jambi', 'palembang', 'bengkulu', 'lampung', 'pangkal',
+        'pontianak', 'singkawang', 'sampit', 'tarakan',
+    ];
+
+    // Pencocokan nama kota (mencakup nama dengan imbuhan/kepanjangan).
+    $match = function (array $list) use ($n): bool {
+        foreach ($list as $city) {
+            if ($city === '' || str_contains($city, '?')) continue;
+            if (str_contains($n, $city)) return true;
+        }
+        return false;
+    };
+
+    if ($match($wit)) return 'WIT';
+    if ($match($wita)) return 'WITA';
+    if ($match($wib)) return 'WIB';
+    return null;
+}
+
+/** Zona waktu sebuah region (kolom region > default dari nama > fallback). */
+function region_timezone(?int $regionId): string
+{
+    if (!$regionId) return DEFAULT_TIMEZONE;
+    static $cache = null;
+    if ($cache === null) {
+        $cache = [];
+        foreach (q('SELECT id, name, timezone FROM regions')->fetchAll() as $r) {
+            $tz = $r['timezone'] ?: region_default_timezone($r['name']);
+            $cache[(int)$r['id']] = $tz ?: DEFAULT_TIMEZONE;
+        }
+    }
+    return $cache[$regionId] ?? DEFAULT_TIMEZONE;
+}
+
+/**
+ * Resolusi zona waktu sebuah kota (tanpa cache):
+ * kolom kota > peta geografis kota > zona waktu region > fallback.
+ */
+function resolve_city_timezone(?string $columnTz, ?string $name, ?int $regionId): string
+{
+    $tz = strtoupper((string)$columnTz);
+    if ($tz !== '') return $tz;
+    $tz = city_default_timezone($name) ?: '';
+    if ($tz === '' && $regionId) $tz = region_timezone($regionId);
+    return $tz ?: DEFAULT_TIMEZONE;
+}
+
+/**
+ * Zona waktu sebuah kota:
+ * kolom kota > peta geografis kota > zona waktu region > fallback.
+ */
+function city_timezone(?int $cityId): string
+{
+    if (!$cityId) return DEFAULT_TIMEZONE;
+    static $cache = null;
+    if ($cache === null) {
+        $cache = [];
+        foreach (q('SELECT id, name, region_id, timezone FROM cities')->fetchAll() as $c) {
+            $cache[(int)$c['id']] = resolve_city_timezone($c['timezone'], $c['name'], $c['region_id'] !== null ? (int)$c['region_id'] : null);
+        }
+    }
+    return $cache[$cityId] ?? DEFAULT_TIMEZONE;
+}
+
+/** Badge zona waktu untuk ditampilkan di tabel/form. */
+function tz_badge(?string $tz): string
+{
+    $tz = strtoupper((string)$tz);
+    if ($tz === '') return '<span class="text-muted">-</span>';
+    $color = ['WIB' => 'bg-secondary', 'WITA' => 'bg-info text-dark', 'WIT' => 'bg-warning text-dark'][$tz] ?? 'bg-light text-dark border';
+    $off = app_timezones()[$tz] ?? 7;
+    return '<span class="badge ' . $color . '">' . e($tz) . ' <small>(UTC+' . $off . ')</small></span>';
+}
+
+/** Badge zona waktu kota (mengikuti zona waktu kota). */
+function city_tz_badge(?int $cityId): string
+{
+    return tz_badge(city_timezone($cityId));
+}
+
+/** Badge zona waktu region. */
+function region_tz_badge(?int $regionId): string
+{
+    return tz_badge(region_timezone($regionId));
+}
+
+/**
+ * Isi zona waktu region & kota yang masih kosong (idempotent).
+ * Dipakai saat migrasi supaya DB lama ikut terisi.
+ */
+function seed_timezones(): void
+{
+    foreach (q('SELECT id, name, timezone FROM regions')->fetchAll() as $r) {
+        if ($r['timezone'] !== null && $r['timezone'] !== '') continue;
+        $tz = region_default_timezone($r['name']);
+        if ($tz) q('UPDATE regions SET timezone=? WHERE id=?', [$tz, (int)$r['id']]);
+    }
+    foreach (q('SELECT id, name, region_id, timezone FROM cities')->fetchAll() as $c) {
+        if ($c['timezone'] !== null && $c['timezone'] !== '') continue;
+        $tz = resolve_city_timezone(null, $c['name'], $c['region_id'] !== null ? (int)$c['region_id'] : null);
+        q('UPDATE cities SET timezone=? WHERE id=?', [$tz, (int)$c['id']]);
+    }
+}
+
 /** Batas workload vendor per region: [region_id => limit]. 0 = tanpa batas. */
 function vendor_region_limits(int $vendorId): array
 {
@@ -1237,6 +1407,7 @@ function migrate_schema(): void
         name VARCHAR(100) NOT NULL UNIQUE,
         code VARCHAR(20) NULL,
         description VARCHAR(255) NULL,
+        timezone VARCHAR(10) NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB');
 
@@ -1244,6 +1415,16 @@ function migrate_schema(): void
     if (!in_array('region_id', $ccols, true)) {
         q('ALTER TABLE cities ADD COLUMN region_id INT NULL AFTER name');
     }
+
+    // Zona waktu region & kota (WIB / WITA / WIT).
+    $rcols = q('SHOW COLUMNS FROM regions')->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('timezone', $rcols, true)) {
+        q('ALTER TABLE regions ADD COLUMN timezone VARCHAR(10) NULL AFTER description');
+    }
+    if (!in_array('timezone', $ccols, true)) {
+        q('ALTER TABLE cities ADD COLUMN timezone VARCHAR(10) NULL AFTER is_primary');
+    }
+    seed_timezones();
 
     q('CREATE TABLE IF NOT EXISTS vendor_regions (
         id INT AUTO_INCREMENT PRIMARY KEY,

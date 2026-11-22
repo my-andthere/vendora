@@ -8,6 +8,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = (int)($_POST['id'] ?? 0);
     $regionId = (int)($_POST['region_id'] ?? 0);
     $isPrimary = isset($_POST['is_primary']) ? 1 : 0;
+    $tzPost = strtoupper(trim($_POST['timezone'] ?? ''));
+    if ($tzPost !== '' && !array_key_exists($tzPost, app_timezones())) $tzPost = '';
     if (($_POST['act'] ?? '') === 'delete') {
         $used = q('SELECT (SELECT COUNT(*) FROM vendors WHERE city_id=?) + (SELECT COUNT(*) FROM tickets WHERE city_id=?)', [$id, $id])->fetchColumn();
         if ($used) flash('danger', 'Kota masih dipakai vendor/tiket, tidak bisa dihapus.');
@@ -17,10 +19,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (q('SELECT 1 FROM cities WHERE name=? AND id<>?', [$name, $id])->fetch()) {
         flash('danger', 'Kota sudah ada.');
     } elseif ($id) {
-        q('UPDATE cities SET name=?, region_id=?, is_primary=? WHERE id=?', [$name, $regionId ?: null, $isPrimary, $id]);
+        // Zona waktu: pakai yang dikirim form; bila form tidak mengirimnya, tetapkan nilai lama.
+        if (array_key_exists('timezone', $_POST)) {
+            $tz = $tzPost ?: (city_default_timezone($name) ?: ($regionId ? region_timezone($regionId) : DEFAULT_TIMEZONE));
+            q('UPDATE cities SET name=?, region_id=?, is_primary=?, timezone=? WHERE id=?', [$name, $regionId ?: null, $isPrimary, $tz, $id]);
+        } else {
+            q('UPDATE cities SET name=?, region_id=?, is_primary=? WHERE id=?', [$name, $regionId ?: null, $isPrimary, $id]);
+        }
         flash('success', 'Kota diperbarui.');
     } else {
-        q('INSERT INTO cities (name, region_id, is_primary) VALUES (?,?,?)', [$name, $regionId ?: null, $isPrimary]);
+        $tz = $tzPost ?: (city_default_timezone($name) ?: ($regionId ? region_timezone($regionId) : DEFAULT_TIMEZONE));
+        q('INSERT INTO cities (name, region_id, is_primary, timezone) VALUES (?,?,?,?)', [$name, $regionId ?: null, $isPrimary, $tz]);
         flash('success', 'Kota ditambahkan.');
     }
     redirect('cities.php');
@@ -44,9 +53,18 @@ require __DIR__ . '/includes/header.php';
             <div class="mt-2"><label class="form-label">Region</label>
                 <select name="region_id" class="form-select form-select-sm">
                     <option value="">- tanpa region -</option>
-                    <?php foreach ($regions as $r): ?><option value="<?= $r['id'] ?>"><?= e($r['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($regions as $r): ?><option value="<?= $r['id'] ?>"><?= e($r['name']) ?> (<?= e(region_timezone((int)$r['id'])) ?>)</option><?php endforeach; ?>
                 </select>
                 <div class="form-text">Kota menentukan vendor mana yang bisa menerima tiket (lihat halaman Region).</div>
+            </div>
+            <div class="mt-2"><label class="form-label">Zona Waktu</label>
+                <select name="timezone" class="form-select form-select-sm">
+                    <option value="">Otomatis (dari lokasi kota)</option>
+                    <?php foreach (app_timezones() as $tz => $off): ?>
+                        <option value="<?= $tz ?>"><?= $tz ?> (UTC+<?= $off ?>)</option>
+                    <?php endforeach; ?>
+                </select>
+                <div class="form-text">Kosong = mengikuti lokasi geografis kota; bila kota tidak dikenal, mengikuti region.</div>
             </div>
             <div class="form-check mt-2">
                 <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="newIsPrimary">
@@ -55,7 +73,7 @@ require __DIR__ . '/includes/header.php';
         </form>
     </div></div>
     <div class="col-md-8"><div class="card"><table class="table mb-0 small">
-        <thead class="table-light"><tr><th>Kota</th><th>Region</th><th class="text-center">Kota Utama</th><th class="text-center">Vendor</th><th class="text-center">Vendor MS</th><th class="text-center">Available</th><th class="text-center">Tiket</th><th></th></tr></thead>
+        <thead class="table-light"><tr><th>Kota</th><th>Region</th><th>Zona Waktu</th><th class="text-center">Kota Utama</th><th class="text-center">Vendor</th><th class="text-center">Vendor MS</th><th class="text-center">Available</th><th class="text-center">Tiket</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($rows as $c): ?>
             <tr>
@@ -66,9 +84,19 @@ require __DIR__ . '/includes/header.php';
                     <select name="region_id" class="form-select form-select-sm">
                         <option value="">- tanpa region -</option>
                         <?php foreach ($regions as $r): ?>
-                            <option value="<?= $r['id'] ?>" <?= (int)$c['region_id'] === (int)$r['id'] ? 'selected' : '' ?>><?= e($r['name']) ?></option>
+                            <option value="<?= $r['id'] ?>" <?= (int)$c['region_id'] === (int)$r['id'] ? 'selected' : '' ?>><?= e($r['name']) ?> (<?= e(region_timezone((int)$r['id'])) ?>)</option>
                         <?php endforeach; ?>
                     </select><button class="btn btn-sm btn-outline-secondary"><i class="bi bi-check"></i></button></form></td>
+                <td><form method="post" class="d-flex gap-1 align-items-center"><?= csrf_field() ?><input type="hidden" name="id" value="<?= $c['id'] ?>">
+                    <input type="hidden" name="name" value="<?= e($c['name']) ?>">
+                    <input type="hidden" name="region_id" value="<?= (int)($c['region_id'] ?? 0) ?>">
+                    <input type="hidden" name="is_primary" value="<?= $c['is_primary'] ? 1 : 0 ?>">
+                    <select name="timezone" class="form-select form-select-sm">
+                        <?php foreach (app_timezones() as $tz => $off): ?>
+                            <option value="<?= $tz ?>" <?= (city_timezone((int)$c['id']) === $tz) ? 'selected' : '' ?>><?= $tz ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-check"></i></button></form></td>
                 <td class="text-center"><form method="post" class="d-inline"><?= csrf_field() ?><input type="hidden" name="id" value="<?= $c['id'] ?>">
                     <input type="hidden" name="name" value="<?= e($c['name']) ?>">
                     <input type="hidden" name="region_id" value="<?= (int)($c['region_id'] ?? 0) ?>">
