@@ -427,9 +427,20 @@ Akun demo: `nam / nam123`.
 - `php tools/test_form_concept.php` – regression suite konsept form (48 pemeriksaan: checklist material, batas per tiket, deteksi blur, dua tahap tanda check, role NAM).
 - `php tools/test_inv_foc_flow.php` – regression suite alur Vendor → Inventory → FOC (85 pemeriksaan: form vendor selalu masuk Inventory, gate checklist material, checklist + keterangan per tahap, FOC hanya menerima form done dari Inventory, gate checklist FOC, link up permanen/temporer, isi form vendor read-only).
 - `php tools/test_timezone.php` – regression suite zona waktu region & kota (35 pemeriksaan: mapping East=WIT/West=WIB/Central=WITA, resolusi kota kolom > geografi > region, badge, pergeseran waktu).
+- `php tools/test_datetime.php` – regression suite proteksi input tanggal (34 pemeriksaan: parser tanggal, sanitasi kolom datetime, pengaman lapis query, insert dengan tanggal sampah tidak fatal).
 - `php tools/check_nested_form.php` – memindai seluruh halaman untuk `<form>` di dalam `<form>` (HTML tidak mengizinkan nested form; browser mengabaikannya sehingga field terkirim ke form yang salah).
 
-Total: **351 pemeriksaan, 0 gagal**.
+Total: **385 pemeriksaan, 0 gagal**.
+
+## Proteksi input tanggal/waktu
+Input tanggal dari form/API selalu divalidasi sebelum masuk database, supaya tidak memicu error MySQL `1366 Incorrect datetime value`.
+
+- `parse_dt($v)` – ubah input mentah jadi `Y-m-d H:i:s`; Mendukung format DB, `datetime-local` browser, dan Indonesia `dd/mm/yyyy`; nilai tidak valid (mis. `gkggf`) → `null`.
+- `sanitize_dt_fields($d)` – bersihkan field yang namanya berakhiran `_at`.
+- `sanitize_row($table, $d)` – bersihkan berdasarkan **tipe kolom di database** (`information_schema`), sehingga kolom tanggal baru pun otomatis aman.
+- `sanitize_params($sql, $params)` – pengaman lapis query: pada `INSERT` dengan daftar kolom eksplisit, parameter untuk kolom `DATE`/`DATETIME`/`TIMESTAMP` otomatis dinormalisasi (aman untuk kolom tambahan seperti `imported_at`).
+- `insert_row($table, $data)` – insert dengan nama kolom dari array data (tidak ada lagi risiko salah jumlah placeholder).
+- Exception handler global: error `SQLSTATE 22007` ditampilkan sebagai halaman ramah **"Format tanggal/waktu tidak valid"** (HTTP 422) atau JSON untuk API — bukan stack trace.
 
 ## Alur Vendor MS (Managed Service)
 Ada dua tipe vendor:

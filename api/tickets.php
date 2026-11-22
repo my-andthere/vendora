@@ -61,6 +61,8 @@ $city = q('SELECT id FROM cities WHERE LOWER(name)=LOWER(?)', [trim((string)($in
 if (!empty($in['city']) && !$city) $errors[] = 'Kota "' . $in['city'] . '" belum terdaftar di sistem Procurement';
 $priority = $in['priority'] ?? 'medium';
 if (!isset(PRIORITIES[$priority])) $errors[] = 'priority harus low|medium|high|critical';
+$reportedAt = !empty($in['reported_at']) ? parse_dt($in['reported_at']) : null;
+if (!empty($in['reported_at']) && $reportedAt === null) $errors[] = 'reported_at tidak valid (format: YYYY-MM-DD HH:MM:SS)';
 if ($errors) respond(422, ['success' => false, 'errors' => $errors]);
 
 $dup = q('SELECT ticket_no FROM tickets WHERE noc_ref=?', [$in['noc_ref']])->fetchColumn();
@@ -78,7 +80,7 @@ $res = create_ticket([
     'problem_type' => $in['problem_type'],
     'description' => $in['description'] ?? null,
     'priority' => $priority,
-    'reported_at' => !empty($in['reported_at']) ? date('Y-m-d H:i:s', strtotime($in['reported_at'])) : null,
+    'reported_at' => $reportedAt,
 ], 'api', null);
 db()->commit();
 

@@ -7,6 +7,66 @@ if (session_status() === PHP_SESSION_NONE && PHP_SAPI !== 'cli') {
 }
 
 // ------------------------------------------------------------
+// Penanganan error global
+// ------------------------------------------------------------
+/**
+ * Error SQL "Incorrect datetime value" (SQLSTATE 22007) biasanya caused oleh
+ * input tanggal tidak valid dari form/API. Tampilkan pesan ramah, bukan stack trace.
+ */
+function is_datetime_error(Throwable $e): bool
+{
+    $prev = $e;
+    while ($prev) {
+        if ($prev instanceof PDOException) {
+            $code = (string)$prev->getCode();
+            if ($code === '22007' || $code === 'HY000') {
+                if (stripos($prev->getMessage(), 'datetime') !== false
+                    || stripos($prev->getMessage(), 'date') !== false
+                    || stripos($prev->getMessage(), 'Incorrect') !== false) {
+                    return true;
+                }
+            }
+        }
+        $prev = $prev->getPrevious();
+    }
+    return false;
+}
+
+if (PHP_SAPI !== 'cli') {
+    set_exception_handler(function (Throwable $e) {
+        $isApi = str_contains($_SERVER['REQUEST_URI'] ?? '', '/api/');
+        if (is_datetime_error($e)) {
+            error_log('[vendora] datetime error: ' . $e->getMessage());
+            if ($isApi) {
+                http_response_code(422);
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'error' => 'Format tanggal/waktu tidak valid. Gunakan YYYY-MM-DD HH:MM:SS.'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            http_response_code(422);
+            echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Format tanggal tidak valid</title>'
+                . '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f8f7;margin:0;padding:40px}'
+                . '.card{max-width:620px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px}'
+                . 'h1{font-size:18px;margin:0 0 8px;color:#166534}p{color:#475569;margin:0 0 12px;line-height:1.6}'
+                . 'code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:13px}</style></head><body><div class="card">'
+                . '<h1>Format tanggal/waktu tidak valid</h1>'
+                . '<p>Nilai tanggal yang dikirim tidak dikenali database. Format yang benar: <code>YYYY-MM-DD HH:MM:SS</code>.</p>'
+                . '<p>Silakan kembali ke form dan isi kembali kolom waktu tersebut.</p>'
+                . '<p><a href="' . e(url()) . '">← Kembali ke dashboard</a></p></div></body></html>';
+            exit;
+        }
+        error_log('[vendora] fatal: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+        http_response_code(500);
+        echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Terjadi kesalahan</title>'
+            . '<style>body{font-family:system-ui,sans-serif;background:#f6f8f7;margin:0;padding:40px}'
+            . '.card{max-width:620px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px}'
+            . 'h1{font-size:18px;margin:0 0 8px;color:#b91c1c}p{color:#475569;margin:0;line-height:1.6}</style></head><body><div class="card">'
+            . '<h1>Terjadi kesalahan pada server</h1><p>Detail error sudah dicatat di log server. Silakan coba lagi.</p></div></body></html>';
+        exit;
+    });
+}
+
+// ------------------------------------------------------------
 // Database
 // ------------------------------------------------------------
 function db(): PDO
@@ -31,8 +91,48 @@ function db(): PDO
 function q(string $sql, array $params = []): PDOStatement
 {
     $st = db()->prepare($sql);
-    $st->execute($params);
+    $st->execute(sanitize_params($sql, $params));
     return $st;
+}
+
+/**
+ * Pengaman lapis query: untuk INSERT dengan daftar kolom eksplisit,
+ * nilai pada kolom bertipe DATE/DATETIME/TIMESTAMP dicek lebih dulu.
+ * Nilai yang tidak valid menjadi NULL sehingga tidak lagi memicu
+ * MySQL error 1366 "Incorrect datetime value".
+ */
+function sanitize_params(string $sql, array $params): array
+{
+    if (!$params) return $params;
+    if (!preg_match('/^\s*INSERT\s+INTO\s+`?([A-Za-z0-9_]+)`?\s*\(([^)]+)\)/i', $sql, $m)) return $params;
+
+    $table = $m[1];
+    $cols = array_map(fn($c) => trim($c, " `\"\t\n\r"), explode(',', $m[2]));
+    $types = table_column_types($table);
+    if (!$types) return $params;
+
+    // Posisi placeholder (?), tanpa ikut named parameter.
+    $pos = [];
+    $len = strlen($sql);
+    $inStr = false;
+    for ($i = 0; $i < $len; $i++) {
+        $ch = $sql[$i];
+        if ($ch === "'" && ($i === 0 || $sql[$i - 1] !== '\\')) $inStr = !$inStr;
+        if (!$inStr && $ch === '?') $pos[] = $i;
+    }
+    if (count($pos) !== count($params)) return $params; // ada named parameter -> biarkan apa adanya
+
+    foreach ($cols as $idx => $col) {
+        if ($idx >= count($params)) break;
+        $t = $types[$col] ?? '';
+        if ($t === 'datetime' || $t === 'timestamp') {
+            $params[$idx] = parse_dt($params[$idx]);
+        } elseif ($t === 'date') {
+            $dt = parse_dt($params[$idx]);
+            $params[$idx] = $dt ? substr($dt, 0, 10) : null;
+        }
+    }
+    return $params;
 }
 
 function now(): string
@@ -119,6 +219,104 @@ function fmt_duration(int $minutes): string
     $m = abs($minutes);
     $s = ($m >= 60 ? intdiv($m, 60) . ' jam ' : '') . ($m % 60) . ' menit';
     return $neg ? '-' . $s : $s;
+}
+
+/**
+ * Normalisasi nilai tanggal/waktu dari input user.
+ * Mengembalikan 'Y-m-d H:i:s' bila valid, null bila kosong atau tidak valid.
+ * dippedakai agar input sampah (mis. "gkggf") tidak pernah masuk ke kolom DATETIME
+ * dan memicu PDOException "Incorrect datetime value".
+ */
+function parse_dt($v): ?string
+{
+    $v = trim((string)$v);
+    if ($v === '' || $v === '0000-00-00 00:00:00') return null;
+
+    // Format Indonesia: dd/mm/yyyy [HH:MM] atau dd-mm-yyyy [HH:MM]
+    if (preg_match('#^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$#', $v, $m)) {
+        [$y, $mo, $d] = [(int)$m[3], (int)$m[2], (int)$m[1]];
+        $h = (int)($m[4] ?? 0); $mi = (int)($m[5] ?? 0); $s = (int)($m[6] ?? 0);
+        if (checkdate($mo, $d, $y) && $h <= 23 && $mi <= 59 && $s <= 59) {
+            return sprintf('%04d-%02d-%02d %02d:%02d:%02d', $y, $mo, $d, $h, $mi, $s);
+        }
+        return null;
+    }
+
+    $ts = strtotime($v);
+    if ($ts === false) return null;
+    return date('Y-m-d H:i:s', $ts);
+}
+
+/**
+ * Bersihkan semua field bertipe tanggal pada array data (kunci berakhiran "_at").
+ * Nilai yang tidak valid menjadi null, bukan string mentah.
+ */
+function sanitize_dt_fields(array $d): array
+{
+    foreach ($d as $k => $v) {
+        if (!is_string($k) || !str_ends_with($k, '_at')) continue;
+        if ($v === null) continue;
+        $d[$k] = parse_dt($v);
+    }
+    return $d;
+}
+
+/**
+ * Tipe kolom sebuah tabel (cache per request), mis. ['reported_at' => 'datetime'].
+ */
+function table_column_types(string $table): array
+{
+    static $cache = [];
+    $table = preg_replace('/[^a-zA-Z0-9_]/', '', $table) ?? '';
+    if ($table === '') return [];
+    if (isset($cache[$table])) return $cache[$table];
+    $types = [];
+    try {
+        $st = db()->prepare('SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS
+                             WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?');
+        $st->execute([$table]);
+        foreach ($st->fetchAll() as $r) $types[$r['COLUMN_NAME']] = strtolower((string)$r['DATA_TYPE']);
+    } catch (PDOException $e) {
+        $types = [];
+    }
+    return $cache[$table] = $types;
+}
+
+/**
+ * Normalisasi nilai baris sesuai tipe kolom di database.
+ * Kolom DATE/DATETIME/TIMESTAMP yang isinya tidak valid menjadi NULL —
+ * mencegah error MySQL 1366 "Incorrect datetime value".
+ */
+function sanitize_row(string $table, array $data): array
+{
+    $types = table_column_types($table);
+    if (!$types) return sanitize_dt_fields($data);
+    foreach ($data as $col => $val) {
+        $t = $types[$col] ?? '';
+        if ($t === 'datetime' || $t === 'timestamp') {
+            $data[$col] = parse_dt($val);
+        } elseif ($t === 'date') {
+            $dt = parse_dt($val);
+            $data[$col] = $dt ? substr($dt, 0, 10) : null;
+        }
+    }
+    return $data;
+}
+
+/**
+ * Insert satu baris ke tabel. Nilai bertipe tanggal otomatis dinormalisasi
+ * sesuai tipe kolom di database, dan nama kolom dibangun dari array data
+ * (tidak ada lagi risiko salah jumlah placeholder).
+ */
+function insert_row(string $table, array $data): int
+{
+    $table = preg_replace('/[^a-zA-Z0-9_]/', '', $table) ?? '';
+    $data = sanitize_row($table, $data);
+    $cols = array_keys($data);
+    $quoted = array_map(fn($c) => "`$c`", $cols);
+    $sql = "INSERT INTO `$table` (" . implode(',', $quoted) . ') VALUES (' . implode(',', array_fill(0, count($cols), '?')) . ')';
+    q($sql, array_values($data));
+    return (int)db()->lastInsertId();
 }
 
 function fmt_qty($n): string
@@ -656,21 +854,21 @@ function generate_spk_no(): string
  */
 function create_ticket(array $d, string $source, ?int $userId): array
 {
+    $d = sanitize_dt_fields($d);
     $ticketNo = generate_ticket_no();
     $spkNo = generate_spk_no();
-    q(
-        'INSERT INTO tickets (ticket_no, spk_no, noc_ref, source, city_id, customer_name, customer_id, location, latitude, longitude,
-            province, activity_type, problem_type, description, priority, reported_at, sla_minutes, status, created_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-        [
-            $ticketNo, $spkNo, $d['noc_ref'] ?: null, $source, $d['city_id'], $d['customer_name'] ?? null, $d['customer_id'] ?? null,
-            $d['location'] ?? null, ($d['latitude'] ?? '') !== '' ? $d['latitude'] : null, ($d['longitude'] ?? '') !== '' ? $d['longitude'] : null,
-            $d['province'] ?? null, $d['activity_type'] ?? null,
-            $d['problem_type'] ?? null, $d['description'] ?? null, $d['priority'] ?? 'medium',
-            $d['reported_at'] ?: now(), SLA_MINUTES, 'open', $userId,
-        ]
-    );
-    $id = (int)db()->lastInsertId();
+    // insert_row menormalisasi nilai tanggal sesuai tipe kolom di database,
+    // jadi input tidak valid tidak lagi memicu error "Incorrect datetime value".
+    $id = insert_row('tickets', [
+        'ticket_no' => $ticketNo, 'spk_no' => $spkNo, 'noc_ref' => $d['noc_ref'] ?: null, 'source' => $source,
+        'city_id' => $d['city_id'], 'customer_name' => $d['customer_name'] ?? null, 'customer_id' => $d['customer_id'] ?? null,
+        'location' => $d['location'] ?? null, 'latitude' => ($d['latitude'] ?? '') !== '' ? $d['latitude'] : null,
+        'longitude' => ($d['longitude'] ?? '') !== '' ? $d['longitude'] : null,
+        'province' => $d['province'] ?? null, 'activity_type' => $d['activity_type'] ?? null,
+        'problem_type' => $d['problem_type'] ?? null, 'description' => $d['description'] ?? null,
+        'priority' => $d['priority'] ?? 'medium',
+        'reported_at' => $d['reported_at'] ?: now(), 'sla_minutes' => SLA_MINUTES, 'status' => 'open', 'created_by' => $userId,
+    ]);
     log_ticket($id, 'created', 'Tiket dibuat dari ' . ($source === 'api' ? 'sistem NOC (API)' : 'form NOC'), $userId);
     noc_notify($id, 'ticket_received');
     $vendorId = auto_assign($id, $userId);

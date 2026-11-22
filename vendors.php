@@ -95,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $canManage) {
             redirect('vendors.php');
         }
         if ($status === 'freeze') {
-            $until = ($_POST['freeze_until'] ?? '') !== '' ? date('Y-m-d H:i:s', strtotime($_POST['freeze_until'])) : null;
+            $until = parse_dt($_POST['freeze_until'] ?? '');
             if (!$until || strtotime($until) <= time()) {
                 flash('danger', 'Status freeze wajib punya tanggal berakhir di masa depan.');
                 redirect('vendors.php');

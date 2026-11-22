@@ -18,8 +18,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (trim($d['location']) === '') $errors[] = 'Lokasi wajib diisi.';
     if (!isset(PRIORITIES[$d['priority']])) $errors[] = 'Prioritas tidak valid.';
     if ($d['noc_ref'] !== '' && q('SELECT 1 FROM tickets WHERE noc_ref=?', [$d['noc_ref']])->fetch()) $errors[] = 'Nomor referensi NOC sudah pernah dibuat.';
+    // Tanggal wajib format valid; input sampah tidak boleh sampai ke database.
+    $rawReported = trim((string)$d['reported_at']);
+    if ($rawReported !== '' && parse_dt($rawReported) === null) $errors[] = 'Waktu Gangguan Dilaporkan tidak valid (contoh: 2026-11-22 10:30).';
     if (!$errors) {
-        $d['reported_at'] = $d['reported_at'] ? date('Y-m-d H:i:s', strtotime($d['reported_at'])) : null;
+        $d['reported_at'] = parse_dt($rawReported);
         db()->beginTransaction();
         $res = create_ticket($d, 'manual', $u['id']);
         db()->commit();

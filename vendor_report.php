@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $data = [
-        'arrived_at' => !empty($_POST['arrived_at']) ? date('Y-m-d H:i:s', strtotime($_POST['arrived_at'])) : null,
+        'arrived_at' => parse_dt($_POST['arrived_at'] ?? ''),
         // "Waktu Selesai Dikerjakan" TIDAK diisi vendor lagi - dicatat otomatis saat
         // vendor menekan tombol "Kirim Laporan" (waktu pengiriman laporan).
         'finished_at' => null,
