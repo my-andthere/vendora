@@ -11,12 +11,14 @@ $f = [
     'sla' => $_GET['sla'] ?? '',
     'from' => $_GET['from'] ?? '',
     'to' => $_GET['to'] ?? '',
+    'repair' => $_GET['repair'] ?? '',
 ];
 if ($f['q'] !== '') {
     $where .= ' AND (t.ticket_no LIKE ? OR t.noc_ref LIKE ? OR t.customer_name LIKE ? OR t.location LIKE ? OR t.problem_type LIKE ?)';
     array_push($params, ...array_fill(0, 5, '%' . $f['q'] . '%'));
 }
 if (isset(TICKET_STATUS[$f['status']])) { $where .= ' AND t.status=?'; $params[] = $f['status']; }
+if (in_array($f['repair'], ['permanent', 'temporary'], true)) { $where .= ' AND t.repair_result=?'; $params[] = $f['repair']; }
 if ($f['city']) { $where .= ' AND t.city_id=?'; $params[] = $f['city']; }
 if (in_array($f['sla'], ['ontime', 'late'], true)) {
     // SLA dihitung sampai PERMANENT -> pakai ekspresi live, bukan kolom cache.
@@ -46,6 +48,11 @@ require __DIR__ . '/includes/header.php';
         <div class="col-6 col-md-2"><select name="status" class="form-select form-select-sm">
             <option value="">Semua status</option>
             <?php foreach (TICKET_STATUS as $k => [$l]): ?><option value="<?= $k ?>" <?= $f['status'] === $k ? 'selected' : '' ?>><?= e($l) ?></option><?php endforeach; ?>
+        </select></div>
+        <div class="col-6 col-md-2"><select name="repair" class="form-select form-select-sm">
+            <option value="">Semua hasil</option>
+            <option value="permanent" <?= $f['repair'] === 'permanent' ? 'selected' : '' ?>>Permanent</option>
+            <option value="temporary" <?= $f['repair'] === 'temporary' ? 'selected' : '' ?>>Temporary</option>
         </select></div>
         <div class="col-6 col-md-2"><select name="city" class="form-select form-select-sm">
             <option value="">Semua kota</option>

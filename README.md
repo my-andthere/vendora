@@ -78,7 +78,7 @@ Ganti semua password setelah dipakai sungguhan. Ganti juga `NOC_API_KEY` di `con
 6. **FOC** menerima form yang sudah **done** dari Inventory, lalu memberi **checklist + keterangan** di samping tiap kolom
    **dokumentasi**, kolom **tindakan yang dilakukan**, dan kolom **detail penyebab gangguan**.
    Semua item wajib dicentang, kalau tidak **link up tidak bisa dilakukan**.
-   **Permanent** → tiket **langsung ditutup** & **BASTO otomatis terbentuk** (lihat [Alur Vendor MS](#alur-vendor-ms-managed-service)). **Temporary** → form dikembalikan ke vendor (revisi), NOC diberi notifikasi layanan pulih sementara.
+   **Permanent** **atau** **Temporary** → tiket **langsung ditutup** & **BASTO otomatis terbentuk** (lihat [Alur Vendor MS](#alur-vendor-ms-managed-service)). Bedanya hanya **badge** di hasil perbaikan: `Permanent` (hijau) atau `Temporary` (kuning). Hasil **Temporary** **tidak** dikembalikan ke vendor.
 7. Tiket yang **melewati SLA** hanya diberi **tanda** lewat badge `Lewat SLA` (merah) — tidak ada penandaan manual.
 
 ## Alur Vendor → Inventory → FOC
@@ -115,6 +115,7 @@ Tanda check lama (`region` = PIC Region, `cgs` = Evaluasi CGS) tetap ada dan tid
   editable hanya saat tiket berstatus `inventory_check` dan user punya role `inventory`/`admin`.
 - **Kolom `Ceklist FOC`** di samping tiap kolom dokumentasi, *Detail Penyebab Gangguan*, dan *Detail Tindakan yang Dilakukan*.
 - Tombol **`Simpan Ceklist FOC`** menyimpan checklist tanpa melakukan link up (boleh belum lengkap).
+- Tombol **`LINK UP | TEMPORER`** menutup tiket seperti PERMANEN, hanya diberi badge **Temporary** (tidak dikembalikan ke vendor).
 - Badge **`Read-only`** di header *Form Laporan Vendor* menandakan isi form tidak bisa diubah Inventory/FOC.
 - Panel FOC menampilkan daftar item yang **belum dicentang** sebagai pengingat.
 
@@ -129,7 +130,7 @@ Tanda check lama (`region` = PIC Region, `cgs` = Evaluasi CGS) tetap ada dan tid
 | `wf_foc_check_gate($ticketId, $post)` | Validasi POST checklist FOC → `['ok','missing',...]`. |
 | `wf_run_inventory_check($ticketId, $post, $userId)` | Aksi Inventory: simpan checklist, terima pengembalian, tulis `inventory_checks`, teruskan ke FOC. |
 | `wf_run_foc_eval($ticketId, $post, $userId)` | Simpan checklist FOC saja (tanpa link up). |
-| `wf_run_foc_linkup($ticketId, $post, $userId, $result)` | Aksi link up PERMANEN/TEMPORER — menolak bila form belum done atau checklist belum lengkap. |
+| `wf_run_foc_linkup($ticketId, $post, $userId, $result)` | Aksi link up PERMANEN/TEMPORER — menolak bila form belum done atau checklist belum lengkap. Dua-duanya menutup tiket + BASTO; TEMPORER hanya ditandai badge **Temporary** (tidak dikembalikan ke vendor). |
 | `inventory_done($t)` / `can_foc_review($u,$t)` / `can_inventory_check($u,$t)` | Syarat akses per tahap. |
 
 ## Status vendor (diatur manual oleh Admin di menu Vendor)
@@ -192,7 +193,7 @@ GET /procurement/api/tickets.php?noc_ref=NOC-123
 ```
 **Keluar (Procurement → NOC)** — setiap event dicatat di tabel `noc_outbox` (menu *Notifikasi ke NOC*).
 Isi `NOC_WEBHOOK_URL` di `config.php` agar dikirim otomatis (POST JSON). Event:
-`ticket_received, vendor_assigned, no_vendor_available, vendor_accepted, work_submitted, temporary_fix, permanent_closed, cancelled`.
+`ticket_received, vendor_assigned, no_vendor_available, vendor_accepted, work_submitted, temporary_fix, temporary_closed, permanent_closed, cancelled`.
 
 ## Pengaturan (`config.php`)
 - `SLA_MINUTES` – batas SLA (menit), default 180
@@ -253,7 +254,8 @@ Board memakai 3 status pengerjaan sebagai kolom utama:
 
 ### Tahap detail (di dalam kanban)
 Tahap yang lebih rinci **tidak lagi jadi kolom terpisah** dan tidak muncul di luar board — semuanya ditampilkan **di dalam kartu** dan di header lane:
-- Badge tahap pada kartu: `Menunggu Vendor`, `Diterima Vendor` / `Menunggu Vendor Menerima`, `Dikerjakan`, `Revisi ke-N`, `Cek Inventory`, `Review FOC`, `Selesai Permanent`, `Dibatalkan`.
+- Badge tahap pada kartu: `Menunggu Vendor`, `Diterima Vendor` / `Menunggu Vendor Menerima`, `Dikerjakan`, `Revisi ke-N`, `Cek Inventory`, `Review FOC`, `Selesai Permanent`, `Selesai Temporary`, `Dibatalkan`.
+- Chip pada header lane **Done** dipisah per hasil: `Selesai Permanent n` dan `Selesai Temporary n` (link ke `tickets.php?status=closed&repair=...`).
 - Chip tahap pada header lane (dengan jumlah, bisa diklik ke Tiket terfilter status), contoh: `Menunggu Vendor 1 · Dikerjakan 1 · Revisi ke-1 1`.
 
 Isi kartu (mengikuti status riil tiket):
@@ -272,11 +274,12 @@ Kendali:
 
 Kode: [includes/kanban.php](includes/kanban.php) (`kanban_lanes()`, `kanban_stage()`, `kanban_data()`, `render_kanban()`), CSS di `assets/style.css`.
 
-## SLA (dihitung sampai PERMANENT)
-Mulai 19 Nov 2026 definisi SLA berubah: SLA **tidak lagi berhenti di laporan pertama**, tapi diukur sampai pekerjaan dinyatakan **PERMANENT** — sama seperti waktu pengerjaan.
+## SLA (dihitung sampai tiket ditutup)
+Mulai 19 Nov 2026 definisi SLA berubah: SLA **tidak lagi berhenti di laporan pertama**, tapi diukur sampai pekerjaan dinyatakan selesai — sama dengan waktu pengerjaan.
+Sejak 23 Nov 2026, **PERMANENT** dan **TEMPORER** sama-sama menutup tiket, jadi verdict SLA final berlaku untuk keduanya.
 
 - **Batas SLA** (`sla_deadline`) tetap dihitung dari penugasan vendor (`SLA_START='assigned'`, default `assigned_at` + `SLA_MINUTES`).
-- **Verdict final** — sah setelah FOC menyatakan **PERMANENT**:
+- **Verdict final** — sah setelah tiket ditutup (**PERMANENT** / **TEMPORER**):
   - `work_finished_at <= sla_deadline` → **Sesuai SLA** (hijau)
   - `work_finished_at >  sla_deadline` → **Lewat SLA** (merah)
 - **Tiket masih berjalan** — belum ada verdict final, tapi badge tetap **live**:
@@ -292,25 +295,26 @@ Helper di [includes/bootstrap.php](includes/bootstrap.php):
 
 Tampil di:
 - **Header detail tiket** — badge SLA live.
-- **Baris "Status SLA"** di detail tiket — badge + penjelasan ("Selesai PERMANENT 18/11/2026 17:07, sesuai batas SLA." / "Masih berjalan - sudah lewat batas SLA ...").
+- **Baris "Status SLA"** di detail tiket — badge + penjelasan ("Selesai (PERMANENT) 18/11/2026 17:07, sesuai batas SLA." / "Masih berjalan - sudah lewat batas SLA ...").
 - **Kartu kanban** — `LEWAT SLA` (merah), `sisa 2j 30m`, atau `SESUAI SLA` (hijau).
 - **Tabel Tiket** — kolom SLA + badge waktu pengerjaan.
-- **Dashboard** — kartu *Kepatuhan SLA* menghitung **hanya tiket PERMANENT**, plus catatan jumlah tiket yang masih berjalan & sudah lewat SLA.
+- **Dashboard** — kartu *Kepatuhan SLA* menghitung **tiket yang sudah ditutup** (PERMANENT / TEMPORER), plus catatan jumlah tiket yang masih berjalan & sudah lewat SLA.
 - **Filter SLA** di halaman Tiket — `Sesuai` / `Lewat` memakai ekspresi live.
+- **Filter Hasil** di halaman Tiket — `Permanent` / `Temporary` (memfilter `tickets.repair_result`).
 
 > ⚠️ Perubahan definisi ini mengubah makna angka historis: `ontime`/`late` lama (yang berhenti di laporan pertama) dihitung ulang ke definisi PERMANENT. Kolom `tickets.sla_status` di-backfill otomatis oleh migrasi ringan.
 
-## Waktu Pengerjaan (berhenti saat PERMANENT)
-Sama seperti SLA (keduanya diukur sampai PERMANENT), **waktu pengerjaan** terus berjalan sampai tiket dinyatakan **PERMANENT**. Cara kerja:
+## Waktu Pengerjaan (berhenti saat tiket ditutup)
+Sama seperti SLA (keduanya diukur sampai tiket ditutup), **waktu pengerjaan** terus berjalan sampai tiket dinyatakan **PERMANENT** / **TEMPORER**. Cara kerja:
 - **Mulai** — saat tiket ditugaskan ke vendor (`assigned_at` → `tickets.work_started_at`). Kalau tiket dialihkan ke vendor lain, timer **tidak direset** (tetap total waktu dari penugasan pertama).
-- **Berhenti** — hanya saat FOC menyatakan **PERMANENT** (`tickets.work_finished_at`). Tidak berhenti saat cek inventory, review FOC, maupun revisi/temporary — semuanya masih terhitung.
+- **Berhenti** — saat FOC menyatakan **PERMANENT** atau **TEMPORER** (`tickets.work_finished_at`). Tidak berhenti saat cek inventory atau review FOC — semuanya masih terhitung.
 - **Pengecualian** — tiket yang **dibatalkan** juga membekukan timer (badge abu-abu), supaya tidak berjalan terus selamanya.
 
 Kolom baru di tabel `tickets`: `work_started_at`, `work_finished_at` (dibuat otomatis oleh migrasi ringan + backfill data lama).
 
 Tampil di:
-- **Kartu kanban** — baris `Waktu pengerjaan ⏱ 1j 35m` dengan counter live per detik (biru = masih berjalan, hijau = permanent, abu-abu = dibatalkan).
-- **Detail tiket** — baris "Waktu Pengerjaan" dengan penjelasan "berjalan terus sejak …, berhenti hanya saat PERMANENT".
+- **Kartu kanban** — baris `Waktu pengerjaan ⏱ 1j 35m` dengan counter live per detik (biru = masih berjalan, hijau = permanent, kuning = temporary, abu-abu = dibatalkan).
+- **Detail tiket** — baris "Waktu Pengerjaan" dengan penjelasan "berjalan terus sejak …, berhenti saat tiket ditutup (PERMANENT / TEMPORER)".
 - **Tabel Tiket** — badge di bawah SLA.
 
 Format durasi: `2j 03m` / `57m 07d` / `45d` (jam / menit / detik).
@@ -384,7 +388,9 @@ Setiap item (material, foto, jenis kerusakan, tindakan penanganan) punya **dua t
 | **Tanda Check PIC Region** (fase 1) | PIC Region / orang lapangan | Status (OK / TANDAIN / reset) + keterangan |
 | **Evaluasi CGS** (fase 2) | FOC → NAM → NOC | Status (OK / TANDAIN / reset) + keterangan |
 
-Tombolnya: **LINK UP \| PERMANEN** (tiket langsung ditutup + BASTO terbentuk) atau **LINK UP \| TEMPORER** (form kembali ke vendor).
+Tombolnya: **LINK UP | PERMANEN** atau **LINK UP | TEMPORER** — keduanya **menutup tiket** (+ BASTO otomatis).
+Beda hanya pada hasil perbaikannya: `Permanent` (badge hijau) atau `Temporary` (badge kuning).
+Hasil **Temporary** **tidak** dikembalikan ke vendor.
 
 ### Screen 3 — Tanda check dua tahap
 
@@ -458,24 +464,29 @@ Semua Vendor MS **diutamakan** otomatis saat penugasan: `ms_first_candidates()` 
 - **Panel Minta Material ke Inventory** disembunyikan untuk Vendor MS; digantikan info “material dipakai langsung dari form laporan”.
 - **Nomor SPK** — otomatis dibuat saat tiket dibuat: `SPK-YYYYMMDD-XXXX` (unik, tampil di detail tiket, form vendor, dan BASTO).
 
-### Penyelesaian tiket: LINK UP PERMANEN langsung menutup
+### Penyelesaian tiket: LINK UP menutup tiket (PERMANEN / TEMPORER)
 Tidak ada lagi tahap **Cek Ready for SLA** (status `sla_check`) maupun tombol **RPA/SLA OK** / **RPA/SLA TANDAIN** — sudah dihapus (19 Nov 2026).
 
 Alur sekarang:
 
 ```
 Vendor kirim laporan  ->  Review FOC
-   LINK UP | PERMANEN  ->  Tiket LANGSUNG ditutup + BASTO otomatis terbentuk
-   LINK UP | TEMPORER  ->  Form kembali ke vendor (revisi)
+   LINK UP | PERMANEN  ->  Tiket LANGSUNG ditutup + BASTO otomatis terbentuk (hasil: Permanent)
+   LINK UP | TEMPORER  ->  Tiket LANGSUNG ditutup + BASTO otomatis terbentuk (hasil: Temporary)
 ```
 
+- **Kedua tombol menutup tiket** dan membuat BASTO. Bedanya hanya pada hasil perbaikan
+  (`tickets.repair_result` = `permanent` / `temporary`) yang ditampilkan sebagai **badge**:
+  - `Permanent` — badge hijau, status tiket *Selesai Permanent*.
+  - `Temporary` — badge kuning, status tiket *Selesai Temporary*; **tidak** dikembalikan ke vendor.
+- Badge `Temporary` muncul di header detail tiket, di tabel Tiket, di kartu kanban (chip lane **Done** dipecah jadi `Selesai Permanent` / `Selesai Temporary`), di baris **Hasil Perbaikan** pada detail tiket, dan di Rekap Bulanan.
 - Tiket yang **melewati SLA** hanya diberi **tanda** lewat badge SLA yang sudah ada: `Lewat SLA` (merah) vs `Sesuai SLA` (hijau) — di header detail, tabel Tiket, kartu kanban, dan rekap bulanan.
 - Verdict SLA menjadi final saat tiket ditutup (`work_finished_at` vs `sla_deadline`).
-- Notifikasi NOC / procurement / FOC menyebut hasilnya: *"Tiket selesai — LEWAT SLA"* atau *"SESUAI SLA"*.
+- Notifikasi NOC / procurement / FOC menyebut hasilnya: *"Tiket selesai — LEWAT SLA"* atau *"SESUAI SLA"* (untuk temporary: *"Tiket selesai (TEMPORER) — …"*).
 - Scope tanda check (`ticket_signoffs`) sekarang: `material`, `dokumentasi`, `penyelesaian`.
 
 ### BASTO
-**BASTO** = catatan penggunaan material, **otomatis terbentuk** dari form vendor yang sudah diisi ketika tiket dinyatakan selesai (PERMANENT).
+**BASTO** = catatan penggunaan material, **otomatis terbentuk** dari form vendor yang sudah diisi ketika tiket dinyatakan selesai (PERMANENT / TEMPORER).
 
 - Nomor: `BASTO-YYYYMMDD-XXXX` (idempotent — satu tiket satu BASTO).
 - Isi: Identitas (No. BASTO, No. Tiket, No. SPK, Ref NOC, Jenis Kegiatan, Jenis Masalah, Kota, Provinsi, Pelanggan, Vendor, Lokasi, waktu tiba/selesai) · Penyelesaian Kerusakan (jenis kerusakan, tindakan perbaikan, detail penyebab & tindakan) · Penggunaan Material (kode, nama, jumlah, status, keterangan) · Dokumentasi (foto per kategori).
@@ -483,7 +494,7 @@ Vendor kirim laporan  ->  Review FOC
 - Link BASTO juga tampil di baris **BASTO** pada detail tiket.
 
 ### Rekap Bulanan
-Halaman **Rekap Bulanan** (`rekap.php`, role admin/noc/procurement/foc) — rekap pekerjaan **selesai (PERMANENT)** per bulan (`?month=YYYY-MM`, 12 bulan terakhir).
+Halaman **Rekap Bulanan** (`rekap.php`, role admin/noc/procurement/foc) — rekap pekerjaan **selesai (PERMANENT / TEMPORER)** per bulan (`?month=YYYY-MM`, 12 bulan terakhir).
 
 - 4 KPI: Tiket Selesai, Kepatuhan SLA (%), Lewat SLA, BASTO Terbentuk.
 - Tabel: rekap **per Vendor** (dengan tipe vendor, sesuai/lewat), **per Region**, **per Jenis Kegiatan**, dan daftar tiket selesai (dengan link BASTO).

@@ -56,7 +56,11 @@ function kanban_stage(array $t): array
         case 'foc_review':
             return ['Review FOC', 'warning'];
         case 'closed':
-            return ['Selesai Permanent', 'success'];
+            // Tiket closed bisa PERMANENT atau TEMPORER -> badge dibedakan.
+            $rr = $t['repair_result'] ?? '';
+            if ($rr === 'temporary') return ['Selesai Temporary', 'warning'];
+            if ($rr === 'permanent') return ['Selesai Permanent', 'success'];
+            return ['Selesai', 'secondary'];
         case 'cancelled':
             return ['Dibatalkan', 'dark'];
     }
@@ -82,7 +86,7 @@ function kanban_jam(?string $dt): string
 
 /**
  * Ambil data kanban per lane.
- * @return array<string,array{total:int,byStatus:array<string,int>,cards:array}>
+ * @return array<string,array{total:int,byStatus:array<string,int>,byResult:array<string,array<string,int>>,cards:array}>
  */
 function kanban_data(string $where, array $params, int $perCol = 12): array
 {
@@ -93,15 +97,17 @@ function kanban_data(string $where, array $params, int $perCol = 12): array
 
     $data = [];
     foreach (kanban_lanes() as $lane) {
-        $data[$lane['key']] = ['total' => 0, 'byStatus' => [], 'cards' => []];
+        $data[$lane['key']] = ['total' => 0, 'byStatus' => [], 'byResult' => [], 'cards' => []];
     }
 
-    // total per status (dipakai untuk angka di header lane)
-    foreach (q("SELECT t.status, COUNT(*) n $join WHERE $where GROUP BY t.status", $params)->fetchAll() as $row) {
+    // total per status + per hasil perbaikan (dipakai untuk angka di header lane)
+    foreach (q("SELECT t.status, t.repair_result, COUNT(*) n $join WHERE $where GROUP BY t.status, t.repair_result", $params)->fetchAll() as $row) {
         foreach (kanban_lanes() as $lane) {
             if (in_array($row['status'], $lane['statuses'], true)) {
                 $data[$lane['key']]['total'] += (int)$row['n'];
-                $data[$lane['key']]['byStatus'][$row['status']] = (int)$row['n'];
+                $data[$lane['key']]['byStatus'][$row['status']] = ($data[$lane['key']]['byStatus'][$row['status']] ?? 0) + (int)$row['n'];
+                $rr = $row['repair_result'] ?: 'null';
+                $data[$lane['key']]['byResult'][$row['status']][$rr] = ($data[$lane['key']]['byResult'][$row['status']][$rr] ?? 0) + (int)$row['n'];
             }
         }
     }
@@ -251,6 +257,19 @@ function render_kanban(array $data, array $opts = []): void
                     $stageChips = '';
                     foreach ($lane['statuses'] as $st) {
                         if (empty($col['byStatus'][$st])) continue;
+                        $byRes = $col['byResult'][$st] ?? [];
+                        if ($st === 'closed') {
+                            // Tiket selesai dibedakan: PERMANENT vs TEMPORER.
+                            foreach (['permanent' => 'Selesai Permanent', 'temporary' => 'Selesai Temporary', 'null' => 'Selesai'] as $rr => $rLabel) {
+                                if (empty($byRes[$rr])) continue;
+                                $href = $rr === 'null'
+                                    ? url('tickets.php?status=closed')
+                                    : url('tickets.php?status=closed&repair=' . $rr);
+                                $stageChips .= '<a class="klane-chip" href="' . $href . '">'
+                                    . e($rLabel) . ' <b>' . (int)$byRes[$rr] . '</b></a>';
+                            }
+                            continue;
+                        }
                         [$sLabel] = kanban_stage(['status' => $st]);
                         $stageChips .= '<a class="klane-chip" href="' . url('tickets.php?status=' . urlencode($st)) . '">'
                             . e($sLabel) . ' <b>' . (int)$col['byStatus'][$st] . '</b></a>';

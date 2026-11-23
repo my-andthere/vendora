@@ -24,7 +24,7 @@ function renderTicketTable(array $rows, string $empty = 'Tidak ada data.'): void
                 <td><?= $t['vendor_name'] ? e($t['vendor_name']) : '<span class="text-muted">-</span>' ?>
                     <?php if ($t['accepted_at']): ?><div class="text-muted" style="font-size:.7rem"><i class="bi bi-check2-circle text-success"></i> Diterima <?= fmt_dt($t['accepted_at']) ?></div>
                     <?php elseif ($t['assigned_at']): ?><div class="text-muted" style="font-size:.7rem">Belum diterima</div><?php endif; ?></td>
-                <td><?= status_badge($t['status']) ?>
+                <td><?= ticket_status_badge($t) ?>
                     <?php if ($t['inv_result'] === 'tidak_sesuai'): ?><span class="badge bg-danger-subtle text-danger" title="Material tidak sesuai">Material ≠</span><?php endif; ?></td>
                 <td><?= in_array($t['status'], ['cancelled'], true) ? '-' : sla_badge($t) ?>
                     <div class="mt-1"><?= work_time_badge($t) ?></div></td>

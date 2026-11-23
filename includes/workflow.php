@@ -371,13 +371,19 @@ function wf_run_foc_eval(int $ticketId, array $post, int $userId): array
 }
 
 /**
- * Link up FOC: PERMANEN (tiket ditutup + BASTO) atau TEMPORER (kembali ke vendor).
+ * Link up FOC: PERMANEN atau TEMPORER.
+ *
+ * Keduanya MENUTUP tiket + BASTO otomatis (sama seperti link up permanen).
+ * Beda hanya pada hasil perbaikannya:
+ *   - 'permanent' -> perbaikan permanen (badge hijau "Permanent")
+ *   - 'temporary' -> hanya perbaikan sementara (badge kuning "Temporary"),
+ *                    tiket tetap ditutup dan TIDAK dikembalikan ke vendor.
  *
  * Aturan:
  *  - Form harus sudah DONE dari Inventory (inv_result terisi).
  *  - SEMUA item ceklist FOC wajib dicentang, kalau tidak tidak bisa lanjut tahap.
  *
- * @return array{ok:bool,error?:string}
+ * @return array{ok:bool,error?:string,sla?:string,basto_no?:?string,result?:string}
  */
 function wf_run_foc_linkup(int $ticketId, array $post, int $userId, string $result): array
 {
@@ -395,7 +401,7 @@ function wf_run_foc_linkup(int $ticketId, array $post, int $userId, string $resu
     }
     $note = trim((string)($post['note'] ?? ''));
     if ($result !== 'permanent' && $note === '') {
-        return ['ok' => false, 'error' => 'Catatan wajib diisi jika perbaikan temporary (agar vendor tahu apa yang harus diperbaiki).'];
+        return ['ok' => false, 'error' => 'Catatan wajib diisi untuk link up temporary (dokumentasi perbaikan sementara).'];
     }
 
     // Simpan ceklist FOC (checkbox + keterangan) sebelum menyatakan link up.
@@ -403,33 +409,40 @@ function wf_run_foc_linkup(int $ticketId, array $post, int $userId, string $resu
 
     q('INSERT INTO foc_reviews (ticket_id, reviewer_id, result, note) VALUES (?,?,?,?)', [$ticketId, $userId, $result, $note]);
     $no = $t['ticket_no'] ?? '';
-    if ($result === 'permanent') {
-        // Waktu pengerjaan BERHENTI di sini (tidak berhenti saat cek inventory / review FOC / revisi).
-        // Tiket LANGSUNG ditutup + BASTO terbentuk otomatis dari form vendor.
-        q("UPDATE tickets SET status='closed', repair_result='permanent',
-            completed_at=COALESCE(completed_at, NOW()),
-            work_finished_at=COALESCE(work_finished_at, NOW()) WHERE id=?", [$ticketId]);
-        sla_sync_ticket($ticketId);
-        $bastoNo = generate_basto($ticketId, $userId);
-        $sla = sla_state(get_ticket($ticketId));
-        $slaLabel = $sla['overdue'] ? 'LEWAT SLA' : 'SESUAI SLA';
-        log_ticket($ticketId, 'foc_permanent', 'FOC/NOC: LINK UP PERMANEN. Tiket selesai - ' . $slaLabel . '.'
+
+    // PERMANEN dan TEMPORER sama-sama MENUTUP tiket (+ BASTO otomatis).
+    // Beda hanya pada hasil perbaikan: 'permanent' (badge hijau) atau 'temporary' (badge kuning).
+    // TEMPORER TIDAK dikembalikan ke vendor.
+    q("UPDATE tickets SET status='closed', repair_result=?,
+        completed_at=COALESCE(completed_at, NOW()),
+        work_finished_at=COALESCE(work_finished_at, NOW()) WHERE id=?", [$result, $ticketId]);
+    sla_sync_ticket($ticketId);
+    $bastoNo = generate_basto($ticketId, $userId);
+    $sla = sla_state(get_ticket($ticketId));
+    $slaLabel = $sla['overdue'] ? 'LEWAT SLA' : 'SESUAI SLA';
+
+    if ($result === 'temporary') {
+        log_ticket($ticketId, 'foc_temporary', 'FOC/NOC: LINK UP TEMPORER. Tiket ditutup (perbaikan sementara, tidak dikembalikan ke vendor) - ' . $slaLabel . '.'
             . ($note ? " {$note}" : '') . ($bastoNo ? ' | BASTO ' . $bastoNo . ' terbentuk otomatis' : ''), $userId);
-        notify_role('noc', "Tiket {$no} SELESAI - {$slaLabel}.", $ticketId);
-        notify_role('procurement', "Tiket {$no} SELESAI - {$slaLabel}.", $ticketId);
-        notify_role('foc', "Tiket {$no} SELESAI - {$slaLabel}.", $ticketId);
-        noc_notify($ticketId, 'permanent_closed', ['sla' => $sla['verdict'], 'basto_no' => $bastoNo]);
-        return ['ok' => true, 'sla' => $slaLabel, 'basto_no' => $bastoNo];
+        notify_role('noc', "Tiket {$no} SELESAI (TEMPORER) - {$slaLabel}.", $ticketId);
+        notify_role('procurement', "Tiket {$no} SELESAI (TEMPORER) - {$slaLabel}.", $ticketId);
+        notify_role('foc', "Tiket {$no} SELESAI (TEMPORER) - {$slaLabel}.", $ticketId);
+        if (!empty($t['vendor_id'])) {
+            notify_vendor((int)$t['vendor_id'], "Tiket {$no} ditutup (TEMPORER): layanan pulih sementara. {$note}", $ticketId);
+        }
+        noc_notify($ticketId, 'temporary_closed', ['sla' => $sla['verdict'], 'basto_no' => $bastoNo, 'note' => $note]);
+        return ['ok' => true, 'sla' => $slaLabel, 'basto_no' => $bastoNo, 'result' => 'temporary'];
     }
 
-    q("UPDATE tickets SET status='revision', repair_result='temporary', revision_count=revision_count+1 WHERE id=?", [$ticketId]);
-    log_ticket($ticketId, 'foc_temporary', 'FOC/NOC: LINK UP TEMPORER, form dikembalikan ke vendor - ' . $note, $userId);
-    if (!empty($t['vendor_id'])) {
-        notify_vendor((int)$t['vendor_id'], "Tiket {$no} dikembalikan (TEMPORER): {$note}", $ticketId);
-    }
-    notify_role('noc', "Tiket {$no}: layanan pulih sementara (temporary), menunggu perbaikan permanent.", $ticketId);
-    noc_notify($ticketId, 'temporary_fix', ['note' => $note]);
-    return ['ok' => true, 'sla' => 'TEMPORER'];
+    // Waktu pengerjaan BERHENTI di sini (tidak berhenti saat cek inventory / review FOC / revisi).
+    // Tiket LANGSUNG ditutup + BASTO terbentuk otomatis dari form vendor.
+    log_ticket($ticketId, 'foc_permanent', 'FOC/NOC: LINK UP PERMANEN. Tiket selesai - ' . $slaLabel . '.'
+        . ($note ? " {$note}" : '') . ($bastoNo ? ' | BASTO ' . $bastoNo . ' terbentuk otomatis' : ''), $userId);
+    notify_role('noc', "Tiket {$no} SELESAI - {$slaLabel}.", $ticketId);
+    notify_role('procurement', "Tiket {$no} SELESAI - {$slaLabel}.", $ticketId);
+    notify_role('foc', "Tiket {$no} SELESAI - {$slaLabel}.", $ticketId);
+    noc_notify($ticketId, 'permanent_closed', ['sla' => $sla['verdict'], 'basto_no' => $bastoNo]);
+    return ['ok' => true, 'sla' => $slaLabel, 'basto_no' => $bastoNo, 'result' => 'permanent'];
 }
 
 // ------------------------------------------------------------

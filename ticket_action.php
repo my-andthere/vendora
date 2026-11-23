@@ -154,7 +154,8 @@ switch ($action) {
             flash('success', 'LINK UP PERMANEN. Tiket ditutup - ' . ($focRes['sla'] ?? 'SESUAI SLA') . '.'
                 . (!empty($focRes['basto_no']) ? ' BASTO ' . $focRes['basto_no'] . ' terbentuk otomatis.' : ''));
         } else {
-            flash('warning', 'LINK UP TEMPORER. Form dikembalikan ke vendor.');
+            flash('warning', 'LINK UP TEMPORER. Tiket ditutup (perbaikan sementara, tidak dikembalikan ke vendor) - ' . ($focRes['sla'] ?? 'SESUAI SLA') . '.'
+                . (!empty($focRes['basto_no']) ? ' BASTO ' . $focRes['basto_no'] . ' terbentuk otomatis.' : ''));
         }
         break;
 

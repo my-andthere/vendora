@@ -23,7 +23,7 @@ $rows = q('SELECT o.*, t.ticket_no FROM noc_outbox o LEFT JOIN tickets t ON t.id
 $eventLabel = [
     'ticket_received' => 'Tiket diterima', 'vendor_assigned' => 'Vendor ditugaskan', 'no_vendor_available' => 'Tidak ada vendor',
     'vendor_accepted' => 'Vendor mulai kerja', 'work_submitted' => 'Vendor lapor selesai', 'temporary_fix' => 'Perbaikan temporary',
-    'permanent_closed' => 'SELESAI PERMANENT', 'cancelled' => 'Dibatalkan',
+    'temporary_closed' => 'SELESAI TEMPORER', 'permanent_closed' => 'SELESAI PERMANENT', 'cancelled' => 'Dibatalkan',
 ];
 $pageTitle = 'Notifikasi ke NOC';
 require __DIR__ . '/includes/header.php';

@@ -42,7 +42,7 @@ require __DIR__ . '/includes/header.php';
 ?>
 <a href="<?= url('tickets.php') ?>" class="small text-decoration-none d-inline-block mb-2"><i class="bi bi-arrow-left"></i> Daftar tiket</a>
 <?= page_head($t['ticket_no'], 'ticket-perforated', '', '<div class="text-end d-flex flex-wrap gap-2 align-items-center justify-content-end">'
-        . status_badge($st)
+        . ticket_status_badge($t)
         . '<span class="small text-white-50">SLA ' . fmt_duration((int)$t['sla_minutes']) . '</span>'
         . ($st === 'cancelled' ? '' : sla_badge($t))
         . ((int)$t['revision_count'] ? '<span class="badge bg-white text-danger">Revisi ke-' . (int)$t['revision_count'] . '</span>' : '')
@@ -93,7 +93,7 @@ require __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                     </td></tr>
                     <tr><th>Batas SLA</th><td><?= fmt_dt($t['sla_deadline']) ?>
-                        <span class="small text-muted">— SLA diukur sampai pekerjaan <b>PERMANENT</b></span>
+                        <span class="small text-muted">— SLA diukur sampai tiket ditutup (<b>PERMANENT</b> / <b>TEMPORER</b>)</span>
                     </td></tr>
                     <tr><th>Status SLA</th><td>
                         <?= sla_badge($t) ?>
@@ -101,7 +101,7 @@ require __DIR__ . '/includes/header.php';
                     </td></tr>
                     <tr><th>Waktu Pengerjaan</th><td>
                         <?= work_time_badge($t) ?>
-                        <span class="small text-muted">— berjalan terus sejak <?= fmt_dt($workTime['start']) ?>, berhenti hanya saat <b>PERMANENT</b><?php if ($workTime['permanent']): ?> (<?= fmt_dt($t['completed_at']) ?>)<?php endif; ?></span>
+                        <span class="small text-muted">— berjalan terus sejak <?= fmt_dt($workTime['start']) ?>, berhenti saat tiket ditutup (<b>PERMANENT</b> / <b>TEMPORER</b>)<?php if ($st === 'closed'): ?> (<?= fmt_dt($t['completed_at']) ?>)<?php endif; ?></span>
                     </td></tr>
                     <tr><th>Laporan Dikirim</th><td><?= fmt_dt_tz($t['submitted_at'], $cityTz) ?>
                         <?php if ($t['submitted_at'] && $t['sla_deadline']):
@@ -114,7 +114,15 @@ require __DIR__ . '/includes/header.php';
                             <span class="badge bg-success"><i class="bi bi-file-earmark-check"></i> <?= e($basto['no_basto']) ?></span>
                             <span class="small text-muted">— terbentuk otomatis dari form vendor</span>
                         <?php else: ?>
-                            <span class="text-muted small">Belum terbentuk (otomatis setelah tiket dinyatakan PERMANENT)</span>
+                            <span class="text-muted small">Belum terbentuk (otomatis setelah tiket dinyatakan PERMANENT / TEMPORER)</span>
+                        <?php endif; ?>
+                    </td></tr>
+                    <tr><th>Hasil Perbaikan</th><td>
+                        <?= repair_result_badge($t) ?>
+                        <?php if (($t['repair_result'] ?? '') === 'temporary'): ?>
+                            <span class="small text-muted">— tiket ditutup, hanya perbaikan sementara (tidak dikembalikan ke vendor)</span>
+                        <?php elseif (($t['repair_result'] ?? '') === 'permanent'): ?>
+                            <span class="small text-muted">— pekerjaan selesai permanen</span>
                         <?php endif; ?>
                     </td></tr>
                     <tr><th>Selesai</th><td><?= fmt_dt_tz($t['completed_at'], $cityTz) ?></td></tr>
@@ -296,7 +304,7 @@ require __DIR__ . '/includes/header.php';
                 <div class="card-header bg-white fw-semibold"><i class="bi bi-clipboard-check"></i> Riwayat Pengecekan</div>
                 <ul class="list-group list-group-flush small">
                     <?php foreach ($focReviews as $r): ?>
-                        <li class="list-group-item"><span class="badge <?= $r['result'] === 'permanent' ? 'bg-success' : 'bg-danger' ?>">FOC: <?= ucfirst($r['result']) ?></span>
+                        <li class="list-group-item"><span class="badge <?= $r['result'] === 'permanent' ? 'bg-success' : 'bg-warning text-dark' ?>">FOC: <?= ucfirst($r['result']) ?></span>
                             <?= e($r['full_name']) ?> · <?= fmt_dt($r['created_at']) ?><?php if ($r['note']): ?><div class="mt-1"><?= nl2br(e($r['note'])) ?></div><?php endif; ?></li>
                     <?php endforeach; ?>
                     <?php foreach ($invChecks as $r): ?>
@@ -472,16 +480,22 @@ require __DIR__ . '/includes/header.php';
                         </div>
                     <?php endif; ?>
                     <?php if ($t['inv_result'] === 'tidak_sesuai'): ?><div class="alert alert-danger small py-2">Perhatian: hasil cek inventory <b>TIDAK SESUAI</b>.</div><?php endif; ?>
+                    <div class="alert alert-info small py-2">
+                        <i class="bi bi-info-circle"></i>
+                        <b>LINK UP | PERMANEN</b> dan <b>LINK UP | TEMPORER</b> sama-sama <b>menutup tiket</b> (+ BASTO otomatis).
+                        Bedanya hanya hasil perbaikan: <b>Permanent</b> (hijau) atau <b>Temporary</b> (kuning).
+                        Hasil <b>Temporary</b> <u>tidak</u> dikembalikan ke vendor.
+                    </div>
                     <form method="post" action="<?= $actionUrl ?>" id="focEvalForm"><?= $hidden ?>
-                        <textarea name="note" class="form-control form-control-sm mb-2" rows="3" placeholder="Catatan review (wajib jika temporer)"></textarea>
+                        <textarea name="note" class="form-control form-control-sm mb-2" rows="3" placeholder="Catatan review (wajib untuk temporer)"></textarea>
                         <div class="d-grid gap-2">
                             <button name="action" value="save_foc_eval" class="btn btn-outline-secondary btn-sm">
                                 <i class="bi bi-save"></i> Simpan Ceklist FOC
                             </button>
                             <button name="action" value="foc_permanent" class="btn btn-success"
                                 onclick="return confirm('Nyatakan LINK UP PERMANEN? Tiket akan ditutup & BASTO terbentuk otomatis.')"><i class="bi bi-check-circle"></i> LINK UP | PERMANEN</button>
-                            <button name="action" value="foc_temporary" class="btn btn-outline-danger"
-                                onclick="return confirm('Nyatakan LINK UP TEMPORER? Form dikembalikan ke vendor.')"><i class="bi bi-arrow-counterclockwise"></i> LINK UP | TEMPORER</button>
+                            <button name="action" value="foc_temporary" class="btn btn-outline-warning"
+                                onclick="return confirm('Nyatakan LINK UP TEMPORER? Tiket akan ditutup (badge Temporary) & BASTO terbentuk otomatis. Form TIDAK dikembalikan ke vendor.')"><i class="bi bi-hourglass-split"></i> LINK UP | TEMPORER</button>
                         </div>
                     </form>
                 <?php endif; ?>

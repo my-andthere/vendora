@@ -658,7 +658,7 @@ const TICKET_STATUS = [
     'inventory_check' => ['Cek Inventory', 'warning'],
     'foc_review'      => ['Review FOC', 'warning'],
     'revision'        => ['Revisi (Temporary)', 'danger'],
-    'closed'          => ['Selesai Permanent', 'success'],
+    'closed'          => ['Selesai', 'success'],
     'cancelled'       => ['Dibatalkan', 'dark'],
 ];
 
@@ -694,6 +694,71 @@ function status_badge(string $status): string
     [$label, $cls] = TICKET_STATUS[$status] ?? [$status, 'secondary'];
     $text = in_array($cls, ['warning', 'info'], true) ? ' text-dark' : '';
     return '<span class="badge bg-' . $cls . $text . '">' . e($label) . '</span>';
+}
+
+/**
+ * Label hasil perbaikan (untuk teks): 'PERMANENT' / 'TEMPORER' / ''.
+ */
+function repair_result_label(?string $r): string
+{
+    if ($r === 'permanent') return 'PERMANENT';
+    if ($r === 'temporary') return 'TEMPORER';
+    return '';
+}
+
+/**
+ * Badge hasil perbaikan (PERMANENT / TEMPORARY) sebuah tiket.
+ * - permanent : hijau  - pekerjaan selesai permanen
+ * - temporary : kuning - tiket ditutup, hanya perbaikan sementara (tidak dikembalikan ke vendor)
+ * @return string badge HTML
+ */
+function repair_result_badge(array $t): string
+{
+    $r = $t['repair_result'] ?? '';
+    if ($r === 'permanent') {
+        return '<span class="badge bg-success" title="Pekerjaan selesai permanen">Permanent</span>';
+    }
+    if ($r === 'temporary') {
+        return '<span class="badge bg-warning text-dark" title="Selesai sementara (temporary) - tiket ditutup, tidak dikembalikan ke vendor">Temporary</span>';
+    }
+    return '<span class="text-muted">-</span>';
+}
+
+/**
+ * Label status tiket yang memperhitungkan hasil perbaikannya.
+ * Tiket closed + temporary => "Selesai Temporary" (bukan "Selesai Permanent").
+ */
+function ticket_status_label(array $t): string
+{
+    $st = $t['status'] ?? '';
+    if ($st === 'closed') {
+        $r = $t['repair_result'] ?? '';
+        if ($r === 'permanent') return 'Selesai Permanent';
+        if ($r === 'temporary') return 'Selesai Temporary';
+        return 'Selesai';
+    }
+    return TICKET_STATUS[$st][0] ?? $st;
+}
+
+/**
+ * Badge status tiket (sudah memperhitungkan hasil perbaikan).
+ * - closed + permanent : hijau  "Selesai Permanent"
+ * - closed + temporary : kuning "Selesai Temporary"
+ */
+function ticket_status_badge(array $t): string
+{
+    $st = $t['status'] ?? '';
+    if ($st === 'closed') {
+        $r = $t['repair_result'] ?? '';
+        if ($r === 'permanent') {
+            return '<span class="badge bg-success">Selesai Permanent</span>';
+        }
+        if ($r === 'temporary') {
+            return '<span class="badge bg-warning text-dark" title="Selesai sementara (temporary) - tiket ditutup, tidak dikembalikan ke vendor">Selesai Temporary</span>';
+        }
+        return '<span class="badge bg-secondary">Selesai</span>';
+    }
+    return status_badge($st);
 }
 
 function vendor_badge(string $status): string
@@ -821,7 +886,8 @@ function sla_badge(array $t): string
 
     if ($s['final']) {
         $selisih = fmt_dur_seconds(abs($s['remaining']));
-        $tip = 'Selesai (PERMANENT) ' . fmt_dt($t['work_finished_at']) . ' - batas SLA ' . fmt_dt($s['deadline'])
+        $label = repair_result_label($t['repair_result'] ?? '') ?: 'PERMANENT';
+        $tip = 'Selesai (' . $label . ') ' . fmt_dt($t['work_finished_at']) . ' - batas SLA ' . fmt_dt($s['deadline'])
             . ' (' . ($s['overdue'] ? 'terlambat ' : 'selisih ') . $selisih . ')';
         return $s['overdue']
             ? '<span class="badge bg-danger" title="' . e($tip) . '">Lewat SLA</span>'
@@ -846,9 +912,10 @@ function sla_note(array $t): string
     if (!$s['deadline']) return 'Belum ada batas SLA (tiket belum ditugaskan).';
     if (($t['status'] ?? '') === 'cancelled') return 'Tiket dibatalkan - SLA tidak dinilai.';
     if ($s['final']) {
+        $label = repair_result_label($t['repair_result'] ?? '') ?: 'PERMANENT';
         return $s['overdue']
-            ? 'Selesai PERMANENT ' . fmt_dt($t['work_finished_at']) . ', terlambat ' . fmt_dur_seconds(-$s['remaining']) . ' dari batas SLA.'
-            : 'Selesai PERMANENT ' . fmt_dt($t['work_finished_at']) . ', sesuai batas SLA.';
+            ? 'Selesai (' . $label . ') ' . fmt_dt($t['work_finished_at']) . ', terlambat ' . fmt_dur_seconds(-$s['remaining']) . ' dari batas SLA.'
+            : 'Selesai (' . $label . ') ' . fmt_dt($t['work_finished_at']) . ', sesuai batas SLA.';
     }
     return $s['overdue']
         ? 'Masih berjalan - sudah lewat batas SLA ' . fmt_dt($s['deadline']) . ' (' . fmt_dur_seconds(-$s['remaining']) . ' keterlambatan).'
@@ -908,6 +975,7 @@ function work_time(array $t): array
         'running'   => $running,
         'started'   => true,
         'permanent' => ($status === 'closed' && ($t['repair_result'] ?? '') === 'permanent'),
+        'temporary' => ($status === 'closed' && ($t['repair_result'] ?? '') === 'temporary'),
     ];
 }
 
@@ -919,6 +987,9 @@ function work_time_badge(array $t): string
     $txt = fmt_dur_seconds($w['seconds']);
     if ($w['permanent']) {
         return '<span class="badge bg-success" title="Waktu pengerjaan (berhenti saat PERMANENT)">&#9202; ' . e($txt) . '</span>';
+    }
+    if ($w['temporary']) {
+        return '<span class="badge bg-warning text-dark" title="Waktu pengerjaan (berhenti - TEMPORER)">&#9202; ' . e($txt) . '</span>';
     }
     if (!$w['running']) {
         $cls = ($t['status'] ?? '') === 'cancelled' ? 'bg-secondary' : 'bg-light text-dark border';
@@ -1015,7 +1086,7 @@ function notify_vendor(int $vendorId, string $msg, ?int $ticketId = null): void
 /**
  * Kirim event ke sistem NOC. Selalu dicatat di noc_outbox; jika NOC_WEBHOOK_URL terisi, langsung di-POST (JSON).
  * Event: ticket_received, vendor_assigned, no_vendor_available, vendor_accepted, work_submitted,
- *        temporary_fix, permanent_closed, cancelled
+ *        temporary_fix, temporary_closed, permanent_closed, cancelled
  */
 function noc_notify(int $ticketId, string $event, array $extra = []): void
 {

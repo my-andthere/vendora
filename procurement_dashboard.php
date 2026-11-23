@@ -26,9 +26,9 @@ $activeTickets = $counts['open'] + $counts['assigned'] + $counts['on_progress']
 
 // Kepatuhan SLA: hanya tiket yang sudah PERMANENT (lihat procurement-sla.md)
 $sla = q("SELECT
-    SUM(CASE WHEN t.status='closed' AND t.repair_result='permanent'
+    SUM(CASE WHEN t.status='closed'
               AND COALESCE(t.work_finished_at, t.completed_at, t.updated_at) <= t.sla_deadline THEN 1 ELSE 0 END) ontime,
-    SUM(CASE WHEN t.status='closed' AND t.repair_result='permanent'
+    SUM(CASE WHEN t.status='closed'
               AND COALESCE(t.work_finished_at, t.completed_at, t.updated_at) >  t.sla_deadline THEN 1 ELSE 0 END) late,
     SUM(CASE WHEN t.status NOT IN ('closed','cancelled') AND t.sla_deadline IS NOT NULL AND NOW() > t.sla_deadline THEN 1 ELSE 0 END) running_late
     FROM tickets t WHERE $where", $params)->fetch();
@@ -104,7 +104,7 @@ require __DIR__ . '/includes/header.php';
                 </div>
                 <span class="kpi-icon"><i class="bi bi-speedometer2"></i></span>
             </div>
-            <div class="kpi-note">SLA maks <?= fmt_duration(SLA_MINUTES) ?> · dihitung sampai PERMANENT</div>
+            <div class="kpi-note">SLA maks <?= fmt_duration(SLA_MINUTES) ?> · dihitung sampai tiket ditutup</div>
             <div class="kpi-note mt-1">
                 <?= (int)$sla['ontime'] ?> sesuai · <?= (int)$sla['late'] ?> lewat
             </div>

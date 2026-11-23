@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $t = get_ticket((int)$t['id']);
     respond(200, ['success' => true, 'data' => [
         'ticket_no' => $t['ticket_no'], 'spk_no' => $t['spk_no'], 'noc_ref' => $t['noc_ref'], 'status' => $t['status'],
-        'status_label' => TICKET_STATUS[$t['status']][0] ?? $t['status'], 'city' => $t['city_name'], 'vendor' => $t['vendor_name'],
+        'status_label' => ticket_status_label($t), 'city' => $t['city_name'], 'vendor' => $t['vendor_name'],
         'vendor_type' => $t['vendor_type'], 'assigned_at' => $t['assigned_at'], 'accepted_at' => $t['accepted_at'],
         'sla_deadline' => $t['sla_deadline'], 'submitted_at' => $t['submitted_at'],
         'sla_status' => sla_state($t)['verdict'], 'repair_result' => $t['repair_result'], 'completed_at' => $t['completed_at'],

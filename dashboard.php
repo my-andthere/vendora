@@ -11,9 +11,9 @@ foreach (q("SELECT status, COUNT(*) n FROM tickets t WHERE $where GROUP BY statu
     $counts[$r['status']] = (int)$r['n'];
 }
 $sla = q("SELECT
-    SUM(CASE WHEN t.status='closed' AND t.repair_result='permanent'
+    SUM(CASE WHEN t.status='closed'
               AND COALESCE(t.work_finished_at, t.completed_at, t.updated_at) <= t.sla_deadline THEN 1 ELSE 0 END) ontime,
-    SUM(CASE WHEN t.status='closed' AND t.repair_result='permanent'
+    SUM(CASE WHEN t.status='closed'
               AND COALESCE(t.work_finished_at, t.completed_at, t.updated_at) >  t.sla_deadline THEN 1 ELSE 0 END) late,
     SUM(CASE WHEN t.status NOT IN ('closed','cancelled') AND t.sla_deadline IS NOT NULL AND NOW() > t.sla_deadline THEN 1 ELSE 0 END) running_late
     FROM tickets t WHERE $where", $params)->fetch();
@@ -102,7 +102,7 @@ endif; ?>
                 <div class="progress-bar" style="width:<?= $slaPct ?>%;background:#fff"></div>
                 <div class="progress-bar" style="width:<?= $slaTotal ? 100 - $slaPct : 0 ?>%;background:rgba(255,255,255,.45)"></div>
             </div>
-            <div class="kpi-note mt-2">Dihitung dari tiket yang sudah <b>PERMANENT</b> (SLA diukur sampai selesai).</div>
+            <div class="kpi-note mt-2">Dihitung dari tiket yang sudah <b>ditutup</b> (PERMANENT / TEMPORER) &mdash; SLA diukur sampai selesai.</div>
             <?php if ($slaRunningLate): ?>
                 <div class="kpi-note mt-1"><i class="bi bi-exclamation-triangle"></i>
                     <?= $slaRunningLate ?> tiket masih berjalan &amp; sudah lewat batas SLA.</div>

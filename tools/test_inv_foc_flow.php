@@ -17,6 +17,7 @@
  * Jalankan: php tools/test_inv_foc_flow.php
  */
 require_once __DIR__ . '/../includes/bootstrap.php';
+require_once __DIR__ . '/../includes/kanban.php';
 
 // ---------------------------------------------------------------
 // Helper test
@@ -327,7 +328,7 @@ $notif = (int)q("SELECT COUNT(*) FROM notifications n JOIN users u ON u.id=n.use
 chk($notif >= 1, "FOC diberi notifikasi setelah inventory selesai ($notif)");
 
 // ---------------------------------------------------------------
-// 8. Link up TEMPORER -> form kembali ke vendor
+// 8. Link up TEMPORER -> tiket ditutup + badge Temporary (TIDAK kembali ke vendor)
 // ---------------------------------------------------------------
 echo "\n-- Link up TEMPORER --\n";
 q("UPDATE tickets SET status='foc_review', repair_result=NULL, completed_at=NULL, work_finished_at=NULL
@@ -337,13 +338,46 @@ $postTmp['note'] = 'Sambungan perlu diperkuat, masih ada redaman';
 $res = wf_run_foc_linkup($ticketId, $postTmp, $focUserId, 'temporary');
 eq($res['ok'], true, 'link up temporary berhasil: ' . (string)($res['error'] ?? ''));
 $t = get_ticket($ticketId);
-eq($t['status'], 'revision', 'tiket kembali ke vendor (revision)');
-eq((int)$t['revision_count'], 1, 'revision_count bertambah');
+eq($t['status'], 'closed', 'tiket ditutup setelah LINK UP TEMPORER');
+eq($t['repair_result'], 'temporary', 'hasil perbaikan = temporary (badge Temporary)');
+eq((int)$t['revision_count'], 0, 'revision_count tidak bertambah (tidak dikembalikan ke vendor)');
+chk(!empty($res['basto_no']), 'BASTO terbentuk otomatis (temporary): ' . (string)($res['basto_no'] ?? '-'));
+$logActionsTmp = q("SELECT action FROM ticket_logs WHERE ticket_id=?", [$ticketId])->fetchAll(PDO::FETCH_COLUMN);
+chk(in_array('foc_temporary', $logActionsTmp, true), 'log link up temporary tersimpan');
 
 // Temporary tanpa catatan -> ditolak
 q("UPDATE tickets SET status='foc_review' WHERE id=?", [$ticketId]);
 $res = wf_run_foc_linkup($ticketId, $post, $focUserId, 'temporary');
 eq($res['ok'], false, 'link up temporary tanpa catatan ditolak');
+chk(strpos((string)($res['error'] ?? ''), 'Catatan wajib diisi') !== false, 'pesan error menyebut catatan temporary wajib');
+
+// ---------------------------------------------------------------
+// 9. Badge / label hasil perbaikan (PERMANENT vs TEMPORER)
+// ---------------------------------------------------------------
+echo "\n-- Badge & label hasil perbaikan --\n";
+$badgeTmp = ticket_status_badge(['status' => 'closed', 'repair_result' => 'temporary']);
+chk(strpos($badgeTmp, 'Selesai Temporary') !== false, 'tiket temporary -> badge "Selesai Temporary"');
+chk(strpos($badgeTmp, 'Selesai Permanent') === false, 'tiket temporary -> TIDAK menampilkan "Selesai Permanent"');
+chk(strpos(ticket_status_badge(['status' => 'closed', 'repair_result' => 'permanent']), 'Selesai Permanent') !== false,
+    'tiket permanent -> badge "Selesai Permanent"');
+eq(ticket_status_label(['status' => 'closed', 'repair_result' => 'temporary']), 'Selesai Temporary', 'label status temporary');
+eq(ticket_status_label(['status' => 'closed', 'repair_result' => 'permanent']), 'Selesai Permanent', 'label status permanent');
+eq(repair_result_label('temporary'), 'TEMPORER', 'repair_result_label temporary');
+eq(repair_result_label('permanent'), 'PERMANENT', 'repair_result_label permanent');
+
+$stageTmp = kanban_stage(['status' => 'closed', 'repair_result' => 'temporary']);
+eq($stageTmp[0], 'Selesai Temporary', 'kanban_stage temporary -> "Selesai Temporary"');
+eq($stageTmp[1], 'warning', 'kanban_stage temporary -> kelas warning');
+$stagePer = kanban_stage(['status' => 'closed', 'repair_result' => 'permanent']);
+eq($stagePer[0], 'Selesai Permanent', 'kanban_stage permanent -> "Selesai Permanent"');
+eq($stagePer[1], 'success', 'kanban_stage permanent -> kelas success');
+
+// Badge waktu pengerjaan temporary = kuning (bukan hijau permanent)
+$wTmp = work_time(['status' => 'closed', 'repair_result' => 'temporary', 'work_started_at' => date('Y-m-d H:i:s', time() - 600), 'work_finished_at' => date('Y-m-d H:i:s', time() - 300)]);
+eq($wTmp['temporary'], true, 'work_time menandai temporary');
+eq($wTmp['permanent'], false, 'work_time temporary bukan permanent');
+chk(strpos(work_time_badge(['status' => 'closed', 'repair_result' => 'temporary', 'work_started_at' => date('Y-m-d H:i:s', time() - 600), 'work_finished_at' => date('Y-m-d H:i:s', time() - 300)]), 'bg-warning') !== false,
+    'badge waktu pengerjaan temporary berwarna kuning');
 
 // ---------------------------------------------------------------
 // Cleanup
