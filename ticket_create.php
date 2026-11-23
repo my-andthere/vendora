@@ -20,12 +20,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($d['noc_ref'] !== '' && q('SELECT 1 FROM tickets WHERE noc_ref=?', [$d['noc_ref']])->fetch()) $errors[] = 'Nomor referensi NOC sudah pernah dibuat.';
     // Tanggal wajib format valid; input sampah tidak boleh sampai ke database.
     $rawReported = trim((string)$d['reported_at']);
-    if ($rawReported !== '' && parse_dt($rawReported) === null) $errors[] = 'Waktu Gangguan Dilaporkan tidak valid (contoh: 2026-11-22 10:30).';
+    if ($rawReported === '') {
+        $rawReported = date('Y-m-d H:i');
+    } elseif (parse_dt($rawReported) === null) {
+        $errors[] = 'Waktu Gangguan Dilaporkan tidak valid (contoh: 2026-11-22 10:30).';
+    }
+    // Koordinat harus angka (dan dalam rentang geografis). Input huruf tidak boleh
+    // sampai ke database karena kolomnya DECIMAL (MySQL error 1366).
+    $lat = parse_num($d['latitude']);
+    $lng = parse_num($d['longitude']);
+    if (trim((string)$d['latitude']) !== '' && $lat === null) $errors[] = 'Latitude harus berupa angka (contoh: -6.2).';
+    elseif ($lat !== null && ($lat < -90 || $lat > 90)) $errors[] = 'Latitude harus antara -90 dan 90.';
+    if (trim((string)$d['longitude']) !== '' && $lng === null) $errors[] = 'Longitude harus berupa angka (contoh: 106.8).';
+    elseif ($lng !== null && ($lng < -180 || $lng > 180)) $errors[] = 'Longitude harus antara -180 dan 180.';
     if (!$errors) {
         $d['reported_at'] = parse_dt($rawReported);
+        $d['latitude'] = $lat;
+        $d['longitude'] = $lng;
         db()->beginTransaction();
-        $res = create_ticket($d, 'manual', $u['id']);
-        db()->commit();
+        try {
+            $res = create_ticket($d, 'manual', $u['id']);
+            db()->commit();
+        } catch (Throwable $e) {
+            db()->rollBack();
+            throw $e;
+        }
         flash($res['vendor_id'] ? 'success' : 'warning', $res['vendor_id']
             ? "Tiket {$res['ticket_no']} dibuat dan otomatis ditugaskan ke vendor di kota yang sama."
             : "Tiket {$res['ticket_no']} dibuat, tetapi TIDAK ADA vendor available di kota tersebut. Silakan tunjuk manual.");
@@ -58,7 +77,7 @@ require __DIR__ . '/includes/header.php';
             </select></div>
         <div class="col-md-4"><label class="form-label">Nama Pelanggan / Site</label><input name="customer_name" class="form-control" value="<?= e($d['customer_name']) ?>"></div>
         <div class="col-md-4"><label class="form-label">ID Pelanggan / Site</label><input name="customer_id" class="form-control" value="<?= e($d['customer_id']) ?>"></div>
-        <div class="col-md-4"><label class="form-label">Waktu Gangguan Dilaporkan</label><input type="datetime-local" name="reported_at" class="form-control" value="<?= e($d['reported_at']) ?>"></div>
+        <div class="col-md-4"><label class="form-label">Waktu Gangguan Dilaporkan</label><input type="datetime-local" name="reported_at" class="form-control" value="<?= e(dt_local_value($d['reported_at'])) ?>"></div>
         <div class="col-md-6"><label class="form-label">Jenis Masalah <span class="text-danger">*</span></label>
             <input name="problem_type" class="form-control" list="problemTypes" required value="<?= e($d['problem_type']) ?>">
             <datalist id="problemTypes"><option>Kabel FO putus</option><option>Redaman tinggi</option><option>ODP rusak</option><option>Closure rusak</option><option>Tiang roboh</option><option>LOS / No signal</option></datalist></div>
@@ -67,8 +86,8 @@ require __DIR__ . '/includes/header.php';
             <datalist id="activityTypes"><option>Troubleshooting</option><option>Maintenance</option><option>Project</option><option>Instalasi</option><option>Aktivasi</option></datalist></div>
         <div class="col-md-4"><label class="form-label">Provinsi</label>
             <input name="province" class="form-control" value="<?= e($d['province']) ?>" placeholder="mis. DKI Jakarta"></div>
-        <div class="col-md-3"><label class="form-label">Latitude</label><input name="latitude" class="form-control" value="<?= e($d['latitude']) ?>"></div>
-        <div class="col-md-3"><label class="form-label">Longitude</label><input name="longitude" class="form-control" value="<?= e($d['longitude']) ?>"></div>
+        <div class="col-md-3"><label class="form-label">Latitude</label><input type="number" step="any" name="latitude" class="form-control" value="<?= e($d['latitude']) ?>" placeholder="mis. -6.2"></div>
+        <div class="col-md-3"><label class="form-label">Longitude</label><input type="number" step="any" name="longitude" class="form-control" value="<?= e($d['longitude']) ?>" placeholder="mis. 106.8"></div>
         <div class="col-12"><label class="form-label">Lokasi / Alamat <span class="text-danger">*</span></label><textarea name="location" class="form-control" rows="2" required><?= e($d['location']) ?></textarea></div>
         <div class="col-12"><label class="form-label">Deskripsi Masalah</label><textarea name="description" class="form-control" rows="3"><?= e($d['description']) ?></textarea></div>
     </div>

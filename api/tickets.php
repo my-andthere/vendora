@@ -63,26 +63,38 @@ $priority = $in['priority'] ?? 'medium';
 if (!isset(PRIORITIES[$priority])) $errors[] = 'priority harus low|medium|high|critical';
 $reportedAt = !empty($in['reported_at']) ? parse_dt($in['reported_at']) : null;
 if (!empty($in['reported_at']) && $reportedAt === null) $errors[] = 'reported_at tidak valid (format: YYYY-MM-DD HH:MM:SS)';
+// Koordinat harus angka (kolomnya DECIMAL). Nilai huruf akan ditolak database.
+$lat = isset($in['latitude']) ? parse_num($in['latitude']) : null;
+$lng = isset($in['longitude']) ? parse_num($in['longitude']) : null;
+if (isset($in['latitude']) && trim((string)$in['latitude']) !== '' && $lat === null) $errors[] = 'latitude harus berupa angka';
+if (isset($in['longitude']) && trim((string)$in['longitude']) !== '' && $lng === null) $errors[] = 'longitude harus berupa angka';
+if ($lat !== null && ($lat < -90 || $lat > 90)) $errors[] = 'latitude harus antara -90 dan 90';
+if ($lng !== null && ($lng < -180 || $lng > 180)) $errors[] = 'longitude harus antara -180 dan 180';
 if ($errors) respond(422, ['success' => false, 'errors' => $errors]);
 
 $dup = q('SELECT ticket_no FROM tickets WHERE noc_ref=?', [$in['noc_ref']])->fetchColumn();
 if ($dup) respond(409, ['success' => false, 'error' => 'noc_ref sudah pernah dibuat', 'ticket_no' => $dup]);
 
 db()->beginTransaction();
-$res = create_ticket([
-    'noc_ref' => trim($in['noc_ref']),
-    'city_id' => (int)$city['id'],
-    'customer_name' => $in['customer_name'] ?? null,
-    'customer_id' => $in['customer_id'] ?? null,
-    'location' => $in['location'],
-    'latitude' => isset($in['latitude']) ? (string)$in['latitude'] : '',
-    'longitude' => isset($in['longitude']) ? (string)$in['longitude'] : '',
-    'problem_type' => $in['problem_type'],
-    'description' => $in['description'] ?? null,
-    'priority' => $priority,
-    'reported_at' => $reportedAt,
-], 'api', null);
-db()->commit();
+try {
+    $res = create_ticket([
+        'noc_ref' => trim($in['noc_ref']),
+        'city_id' => (int)$city['id'],
+        'customer_name' => $in['customer_name'] ?? null,
+        'customer_id' => $in['customer_id'] ?? null,
+        'location' => $in['location'],
+        'latitude' => $lat,
+        'longitude' => $lng,
+        'problem_type' => $in['problem_type'],
+        'description' => $in['description'] ?? null,
+        'priority' => $priority,
+        'reported_at' => $reportedAt,
+    ], 'api', null);
+    db()->commit();
+} catch (Throwable $e) {
+    db()->rollBack();
+    throw $e;
+}
 
 $t = get_ticket($res['id']);
 respond(201, ['success' => true, 'data' => [

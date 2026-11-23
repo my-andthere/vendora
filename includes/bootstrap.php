@@ -10,58 +10,141 @@ if (session_status() === PHP_SESSION_NONE && PHP_SAPI !== 'cli') {
 // Penanganan error global
 // ------------------------------------------------------------
 /**
- * Error SQL "Incorrect datetime value" (SQLSTATE 22007) biasanya caused oleh
- * input tanggal tidak valid dari form/API. Tampilkan pesan ramah, bukan stack trace.
+ * Rantai exception (exception + previous) sebagai array.
+ */
+function error_chain(Throwable $e): array
+{
+    $out = [];
+    $cur = $e;
+    while ($cur) {
+        $out[] = $cur;
+        $cur = $cur->getPrevious();
+    }
+    return $out;
+}
+
+/**
+ * Ambil detail kolom yang gagal dari pesan PDO MySQL/MariaDB.
+ * Contoh: 1366 Incorrect decimal value: 'sdgsg' for column `db`.`tickets`.`latitude` at row 1
+ * Penting: MariaDB memakai SQLSTATE 22007 ("Invalid datetime format") untuk SEMUA error 1366,
+ * termasuk kolom DECIMAL - jadi jenis error harus dibaca dari teksnya, bukan dari SQLSTATE.
+ *
+ * @return array{kind:string,value:string,table:string,column:string}|null
+ */
+function parse_column_error(PDOException $e): ?array
+{
+    $msg = $e->getMessage();
+    if (!preg_match('/Incorrect\s+(\w+)\s+value:\s*\'([^\']*)\'\s+for\s+column\s+([^\s]+)(?:\s+at\s+row)?/i', $msg, $m)) {
+        return null;
+    }
+    $parts = array_map(fn($p) => trim($p, '`" '), explode('.', $m[3]));
+    $column = (string)array_pop($parts);
+    $table = (string)array_pop($parts);
+    return ['kind' => strtolower($m[1]), 'value' => $m[2], 'table' => $table, 'column' => $column];
+}
+
+/**
+ * Detail error kolom dari exception manapun (null bila bukan error kolom).
+ */
+function column_error_info(Throwable $e): ?array
+{
+    foreach (error_chain($e) as $ex) {
+        if ($ex instanceof PDOException) {
+            $info = parse_column_error($ex);
+            if ($info) return $info;
+        }
+    }
+    return null;
+}
+
+/**
+ * True bila error memang tentang kolom tanggal/waktu (bukan kolom angka).
  */
 function is_datetime_error(Throwable $e): bool
 {
-    $prev = $e;
-    while ($prev) {
-        if ($prev instanceof PDOException) {
-            $code = (string)$prev->getCode();
-            if ($code === '22007' || $code === 'HY000') {
-                if (stripos($prev->getMessage(), 'datetime') !== false
-                    || stripos($prev->getMessage(), 'date') !== false
-                    || stripos($prev->getMessage(), 'Incorrect') !== false) {
-                    return true;
-                }
-            }
+    $info = column_error_info($e);
+    if ($info) {
+        return in_array($info['kind'], ['datetime', 'date', 'time', 'timestamp', 'year', 'month', 'day'], true);
+    }
+    foreach (error_chain($e) as $ex) {
+        if ($ex instanceof PDOException && stripos($ex->getMessage(), 'Incorrect datetime value') !== false) {
+            return true;
         }
-        $prev = $prev->getPrevious();
     }
     return false;
+}
+
+/**
+ * True bila error karena nilai angka (decimal/double/int) yang tidak valid.
+ */
+function is_numeric_error(Throwable $e): bool
+{
+    $info = column_error_info($e);
+    if ($info) {
+        return in_array($info['kind'], ['decimal', 'double', 'float', 'numeric', 'integer', 'int', 'bigint', 'smallint', 'mediumint', 'tinyint'], true);
+    }
+    return false;
+}
+
+/**
+ * Halaman error ramah (tanpa stack trace) untuk exception yang tertangkap.
+ */
+function render_error_page(string $title, string $message, string $hint = '', string $color = '#166534'): string
+{
+    $links = '<p class="links"><a href="' . e(url('ticket_create.php')) . '">← Kembali ke form buat tiket</a>'
+        . ' &nbsp;|&nbsp; <a href="' . e(url()) . '">← Kembali ke dashboard</a></p>';
+    return '<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+        . '<title>' . e($title) . '</title>'
+        . '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f8f7;margin:0;padding:40px}'
+        . '.card{max-width:620px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px}'
+        . 'h1{font-size:18px;margin:0 0 8px;color:' . $color . '}p{color:#475569;margin:0 0 12px;line-height:1.6}'
+        . 'code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:13px}'
+        . '.links a{color:' . $color . '}</style></head><body><div class="card">'
+        . '<h1>' . e($title) . '</h1><p>' . $message . '</p>'
+        . ($hint !== '' ? '<p>' . e($hint) . '</p>' : '')
+        . $links . '</div></body></html>';
 }
 
 if (PHP_SAPI !== 'cli') {
     set_exception_handler(function (Throwable $e) {
         $isApi = str_contains($_SERVER['REQUEST_URI'] ?? '', '/api/');
-        if (is_datetime_error($e)) {
-            error_log('[vendora] datetime error: ' . $e->getMessage());
+        $isDt = is_datetime_error($e);
+        $isNum = is_numeric_error($e);
+        if ($isDt || $isNum) {
+            error_log('[vendora] input error: ' . $e->getMessage());
+            $info = column_error_info($e);
+            $col = '';
+            if ($info && $info['column'] !== '') {
+                $col = ($info['table'] !== '' ? $info['table'] . '.' : '') . $info['column'];
+            }
+            if ($isDt) {
+                $title = 'Format tanggal/waktu tidak valid';
+                $message = 'Nilai tanggal yang dikirim tidak dikenali database. Format yang benar: <code>YYYY-MM-DD HH:MM:SS</code>.';
+                $hint = 'Silakan kembali ke form dan isi kembali kolom waktu tersebut.';
+            } else {
+                $title = 'Nilai angka tidak valid';
+                $message = 'Kolom <code>' . e($col ?: 'numerik') . '</code> hanya menerima angka'
+                    . ($info && $info['value'] !== '' ? '. Nilai yang diterima: <code>' . e($info['value']) . '</code>' : '') . '.';
+                $hint = 'Silakan kembali ke form dan isi kembali kolom tersebut dengan angka (tanpa huruf).';
+            }
             if ($isApi) {
                 http_response_code(422);
                 header('Content-Type: application/json; charset=utf-8');
-                echo json_encode(['success' => false, 'error' => 'Format tanggal/waktu tidak valid. Gunakan YYYY-MM-DD HH:MM:SS.'], JSON_UNESCAPED_UNICODE);
+                echo json_encode(['success' => false, 'error' => strip_tags($message)], JSON_UNESCAPED_UNICODE);
                 exit;
             }
             http_response_code(422);
-            echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Format tanggal tidak valid</title>'
-                . '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f8f7;margin:0;padding:40px}'
-                . '.card{max-width:620px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px}'
-                . 'h1{font-size:18px;margin:0 0 8px;color:#166534}p{color:#475569;margin:0 0 12px;line-height:1.6}'
-                . 'code{background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:13px}</style></head><body><div class="card">'
-                . '<h1>Format tanggal/waktu tidak valid</h1>'
-                . '<p>Nilai tanggal yang dikirim tidak dikenali database. Format yang benar: <code>YYYY-MM-DD HH:MM:SS</code>.</p>'
-                . '<p>Silakan kembali ke form dan isi kembali kolom waktu tersebut.</p>'
-                . '<p><a href="' . e(url()) . '">← Kembali ke dashboard</a></p></div></body></html>';
+            echo render_error_page($title, $message, $hint);
             exit;
         }
         error_log('[vendora] fatal: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
         http_response_code(500);
-        echo '<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Terjadi kesalahan</title>'
-            . '<style>body{font-family:system-ui,sans-serif;background:#f6f8f7;margin:0;padding:40px}'
-            . '.card{max-width:620px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px}'
-            . 'h1{font-size:18px;margin:0 0 8px;color:#b91c1c}p{color:#475569;margin:0;line-height:1.6}</style></head><body><div class="card">'
-            . '<h1>Terjadi kesalahan pada server</h1><p>Detail error sudah dicatat di log server. Silakan coba lagi.</p></div></body></html>';
+        echo render_error_page(
+            'Terjadi kesalahan pada server',
+            'Detail error sudah dicatat di log server. Silakan coba lagi.',
+            'Jika error terus muncul, hubungi administrator.',
+            '#b91c1c'
+        );
         exit;
     });
 }
@@ -96,43 +179,190 @@ function q(string $sql, array $params = []): PDOStatement
 }
 
 /**
+ * Normalisasi nilai numerik dari input user.
+ * Mengembalikan float bila valid, null bila kosong atau bukan angka.
+ * Mencegah MySQL error 1366 "Incorrect decimal value" (SQLSTATE 22007).
+ */
+function parse_num($v): ?float
+{
+    if ($v === null || is_bool($v) || is_array($v)) return null;
+    if (is_int($v) || is_float($v)) return (float)$v;
+    $v = trim((string)$v);
+    if ($v === '') return null;
+    // Terima format Indonesia (koma sebagai desimal) dan format biasa.
+    if (str_contains($v, ',') && !str_contains($v, '.')) $v = str_replace(',', '.', $v);
+    if (!preg_match('/^[+-]?(\d+(\.\d*)?|\.\d+)$/', $v)) return null;
+    return (float)$v;
+}
+
+/**
+ * Nilai untuk input <input type="datetime-local">: "Y-m-d\TH:i".
+ * Nilai yang tidak bisa diparse dikembalikan apa adanya agar user tidak
+ * kehilangan isiannya, dan default ke waktu sekarang.
+ */
+function dt_local_value($v): string
+{
+    $v = trim((string)$v);
+    if ($v === '') return date('Y-m-d\TH:i');
+    $dt = parse_dt($v);
+    if ($dt === null) return date('Y-m-d\TH:i');
+    return substr($dt, 0, 16) === '' ? $v : str_replace(' ', 'T', substr($dt, 0, 16));
+}
+
+/**
  * Pengaman lapis query: untuk INSERT dengan daftar kolom eksplisit,
  * nilai pada kolom bertipe DATE/DATETIME/TIMESTAMP dicek lebih dulu.
  * Nilai yang tidak valid menjadi NULL sehingga tidak lagi memicu
  * MySQL error 1366 "Incorrect datetime value".
+ * Kolom numerik (DECIMAL/INT) juga dinormalisasi agar input sampah
+ * (mis. "sdgsg" pada latitude) tidak memicu "Incorrect decimal value".
+ *
+ * Catatan: pemetaan kolom -> parameter dilakukan lewat parser VALUES,
+ * bukan lewat indeks, karena beberapa INSERT memakai nilai literal
+ * (NOW(), 1) di tengah daftar VALUES sehingga indeks bergeser.
  */
 function sanitize_params(string $sql, array $params): array
 {
     if (!$params) return $params;
-    if (!preg_match('/^\s*INSERT\s+INTO\s+`?([A-Za-z0-9_]+)`?\s*\(([^)]+)\)/i', $sql, $m)) return $params;
+    $parsed = parse_insert_statement($sql);
+    if ($parsed === null) return $params;
 
-    $table = $m[1];
-    $cols = array_map(fn($c) => trim($c, " `\"\t\n\r"), explode(',', $m[2]));
+    [$table, $cols, $values] = $parsed;
     $types = table_column_types($table);
     if (!$types) return $params;
 
-    // Posisi placeholder (?), tanpa ikut named parameter.
-    $pos = [];
-    $len = strlen($sql);
-    $inStr = false;
-    for ($i = 0; $i < $len; $i++) {
-        $ch = $sql[$i];
-        if ($ch === "'" && ($i === 0 || $sql[$i - 1] !== '\\')) $inStr = !$inStr;
-        if (!$inStr && $ch === '?') $pos[] = $i;
+    // Peta kolom -> indeks parameter. Kolom yang diisi literal (NOW(), 1, ...)
+    // dilewati, sehingga indeks parameter tetap tepat.
+    $map = [];
+    $paramIdx = 0;
+    foreach ($values as $i => $expr) {
+        if ($expr !== '?') continue;
+        $col = $cols[$i] ?? null;
+        if ($col === null) continue;
+        $map[$col] = $paramIdx;
+        $paramIdx++;
     }
-    if (count($pos) !== count($params)) return $params; // ada named parameter -> biarkan apa adanya
+    if ($paramIdx !== count($params)) return $params; // named parameter / tidak cocok -> biarkan apa adanya
 
-    foreach ($cols as $idx => $col) {
-        if ($idx >= count($params)) break;
+    foreach ($map as $col => $idx) {
+        if (!array_key_exists($idx, $params)) continue;
         $t = $types[$col] ?? '';
         if ($t === 'datetime' || $t === 'timestamp') {
             $params[$idx] = parse_dt($params[$idx]);
         } elseif ($t === 'date') {
             $dt = parse_dt($params[$idx]);
             $params[$idx] = $dt ? substr($dt, 0, 10) : null;
+        } elseif (is_numeric_column_type($t)) {
+            $num = parse_num($params[$idx]);
+            $params[$idx] = $num === null ? null : (is_int_column_type($t) ? (int)round($num) : $num);
         }
     }
     return $params;
+}
+
+/**
+ * Uraikan statement INSERT INTO t (cols) VALUES (...) menjadi [tabel, kolom[], nilai[]].
+ * Mengembalikan null bila bukan pola INSERT sederhana (mis. multi-row INSERT).
+ */
+function parse_insert_statement(string $sql): ?array
+{
+    if (!preg_match('/^\s*INSERT\s+(?:IGNORE\s+)?INTO\s+`?([A-Za-z0-9_]+)`?\s*\(/i', $sql, $m, PREG_OFFSET_CAPTURE)) {
+        return null;
+    }
+    $table = $m[1][0];
+
+    // Kurung pembuka daftar kolom, lalu pasangannya.
+    $open = strpos($sql, '(', $m[0][1]);
+    if ($open === false) return null;
+    $close = match_paren($sql, $open);
+    if ($close === null) return null;
+    $cols = array_map(fn($c) => trim($c, " `\"\t\n\r"), explode(',', substr($sql, $open + 1, $close - $open - 1)));
+
+    // Cari VALUES di belakang daftar kolom (boleh ada klausa lain sesudahnya).
+    $rest = substr($sql, $close + 1);
+    if (!preg_match('/\bVALUES\s*\(/i', $rest, $vm, PREG_OFFSET_CAPTURE)) return null;
+    $vOpen = $close + 1 + $vm[0][1] + strpos($vm[0][0], '(');
+    $vClose = match_paren($sql, $vOpen);
+    if ($vClose === null) return null;
+    $values = split_sql_list(substr($sql, $vOpen + 1, $vClose - $vOpen - 1));
+
+    if (count($values) !== count($cols)) return null;
+    return [$table, $cols, $values];
+}
+
+/**
+ * Posisi kurung penutup yang sepadan dengan kurung pembuka di $open.
+ */
+function match_paren(string $sql, int $open): ?int
+{
+    $depth = 0;
+    $inStr = false;
+    $len = strlen($sql);
+    for ($i = $open; $i < $len; $i++) {
+        $ch = $sql[$i];
+        if ($inStr) {
+            if ($ch === "'" && ($i === 0 || $sql[$i - 1] !== '\\')) $inStr = false;
+            continue;
+        }
+        if ($ch === "'") { $inStr = true; continue; }
+        if ($ch === '(') $depth++;
+        elseif ($ch === ')') {
+            $depth--;
+            if ($depth === 0) return $i;
+        }
+    }
+    return null;
+}
+
+/**
+ * Pecah daftar nilai SQL ("a, b, NOW(), 'x, y'") menjadi elemen-elemennya,
+ * dengan hormat terhadap tanda kutip dan tanda kurung.
+ */
+function split_sql_list(string $list): array
+{
+    $out = [];
+    $buf = '';
+    $depth = 0;
+    $inStr = false;
+    $len = strlen($list);
+    for ($i = 0; $i < $len; $i++) {
+        $ch = $list[$i];
+        if ($inStr) {
+            $buf .= $ch;
+            if ($ch === "'" && ($i === 0 || $list[$i - 1] !== '\\')) $inStr = false;
+            continue;
+        }
+        if ($ch === "'") { $inStr = true; $buf .= $ch; continue; }
+        if ($ch === '(') $depth++;
+        if ($ch === ')') $depth--;
+        if ($ch === ',' && $depth === 0) {
+            $out[] = trim($buf);
+            $buf = '';
+            continue;
+        }
+        $buf .= $ch;
+    }
+    if (trim($buf) !== '') $out[] = trim($buf);
+    return $out;
+}
+
+/**
+ * True bila tipe kolom DB termasuk bilangan bulat.
+ */
+function is_int_column_type(string $type): bool
+{
+    return in_array(strtolower($type), ['int', 'integer', 'bigint', 'smallint', 'mediumint', 'tinyint'], true);
+}
+
+/**
+ * True bila tipe kolom DB termasuk numerik.
+ */
+function is_numeric_column_type(string $type): bool
+{
+    return in_array(strtolower($type), [
+        'decimal', 'numeric', 'float', 'double', 'real',
+        'int', 'integer', 'bigint', 'smallint', 'mediumint', 'tinyint',
+    ], true);
 }
 
 function now(): string
@@ -286,6 +516,8 @@ function table_column_types(string $table): array
  * Normalisasi nilai baris sesuai tipe kolom di database.
  * Kolom DATE/DATETIME/TIMESTAMP yang isinya tidak valid menjadi NULL —
  * mencegah error MySQL 1366 "Incorrect datetime value".
+ * Kolom numerik yang isinya bukan angka juga menjadi NULL —
+ * mencegah error MySQL 1366 "Incorrect decimal value".
  */
 function sanitize_row(string $table, array $data): array
 {
@@ -298,6 +530,15 @@ function sanitize_row(string $table, array $data): array
         } elseif ($t === 'date') {
             $dt = parse_dt($val);
             $data[$col] = $dt ? substr($dt, 0, 10) : null;
+        } elseif (is_numeric_column_type($t)) {
+            $num = parse_num($val);
+            if ($num === null) {
+                $data[$col] = null;
+            } elseif (in_array($t, ['int', 'integer', 'bigint', 'smallint', 'mediumint', 'tinyint'], true)) {
+                $data[$col] = (int)round($num);
+            } else {
+                $data[$col] = $num;
+            }
         }
     }
     return $data;
@@ -862,8 +1103,9 @@ function create_ticket(array $d, string $source, ?int $userId): array
     $id = insert_row('tickets', [
         'ticket_no' => $ticketNo, 'spk_no' => $spkNo, 'noc_ref' => $d['noc_ref'] ?: null, 'source' => $source,
         'city_id' => $d['city_id'], 'customer_name' => $d['customer_name'] ?? null, 'customer_id' => $d['customer_id'] ?? null,
-        'location' => $d['location'] ?? null, 'latitude' => ($d['latitude'] ?? '') !== '' ? $d['latitude'] : null,
-        'longitude' => ($d['longitude'] ?? '') !== '' ? $d['longitude'] : null,
+        'location' => $d['location'] ?? null,
+        'latitude' => parse_num($d['latitude'] ?? null),
+        'longitude' => parse_num($d['longitude'] ?? null),
         'province' => $d['province'] ?? null, 'activity_type' => $d['activity_type'] ?? null,
         'problem_type' => $d['problem_type'] ?? null, 'description' => $d['description'] ?? null,
         'priority' => $d['priority'] ?? 'medium',
