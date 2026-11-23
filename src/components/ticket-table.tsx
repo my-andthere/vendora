@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { fmtDt } from '@/lib/format';
 import type { TicketLike } from '@/lib/sla';
 import { AcceptLine, PriorityBadge, SlaBadge, StatusBadge, WorkTimeBadge } from './badges';
+import EmptyState from './empty-state';
 
 /**
  * Ticket table — port of includes/ticket_table.php (renderTicketTable).
@@ -28,7 +29,11 @@ export default function TicketTable({
   empty?: string;
 }) {
   if (!rows.length) {
-    return <div className="p-4 text-center text-slate-500">{empty}</div>;
+    return (
+      <div className="p-4">
+        <EmptyState icon="bi-inbox" title="Belum ada data" text={empty} />
+      </div>
+    );
   }
 
   return (
@@ -50,7 +55,10 @@ export default function TicketTable({
           {rows.map((t) => (
             <tr key={t.id} className="hover:bg-slate-50">
               <td className="font-semibold">
-                <Link href={`/tickets/${t.id}`} className="text-blue-700 hover:underline">
+                <Link
+                  href={`/tickets/${t.id}`}
+                  className="text-blue-700 transition hover:text-blue-800 hover:underline"
+                >
                   {t.ticket_no}
                 </Link>
                 {t.noc_ref ? <div className="text-slate-500">NOC: {t.noc_ref}</div> : null}

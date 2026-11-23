@@ -67,8 +67,7 @@ export const PHOTO_REQUIRED = ['before', 'after'];
 export const SIGNOFF_SCOPES: Record<string, string> = {
   material: 'Material',
   dokumentasi: 'Dokumentasi',
-  penyelesaian: 'Penyelesaian',
-  sla: 'SLA',
+  penyelesaian: 'Penyelesaian Kerusakan',
 };
 
 export const SIGNOFF_STAGES: Record<string, string> = {

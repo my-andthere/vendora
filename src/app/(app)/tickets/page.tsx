@@ -5,6 +5,7 @@ import { TICKET_STATUS } from '@/lib/config';
 import { slaCaseSql } from '@/lib/sla';
 import { ticketScope } from '@/lib/tickets';
 import TicketTable, { type TicketRow } from '@/components/ticket-table';
+import PageHeader from '@/components/page-header';
 
 export const dynamic = 'force-dynamic';
 
@@ -95,24 +96,37 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
 
   return (
     <>
-      <div className="mb-3 flex items-center justify-between">
-        <h4 className="mb-0 text-lg font-semibold">Daftar Tiket</h4>
-        {canCreate ? (
-          <Link href="/tickets/new" className="btn btn-primary">
-            <i className="bi bi-plus-circle" /> Buat Tiket
-          </Link>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Daftar Tiket"
+        subtitle="Kelola seluruh tiket field beserta SLA-nya."
+        icon="bi-ticket-detailed"
+        breadcrumb={[{ label: 'Tiket' }]}
+        actions={
+          canCreate ? (
+            <Link href="/tickets/new" className="btn btn-primary">
+              <i className="bi bi-plus-circle" /> Buat Tiket
+            </Link>
+          ) : null
+        }
+      />
 
-      <form className="card card-body mb-3" method="get">
-        <div className="flex flex-wrap gap-2">
-          <input
-            name="q"
-            className="form-control form-control-sm w-full sm:w-64"
-            placeholder="Cari no tiket / ref NOC / pelanggan / lokasi"
-            defaultValue={f.q}
-          />
-          <select name="status" className="form-select form-select-sm w-auto" defaultValue={f.status}>
+      <form className="card card-body mb-4" method="get">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <i className="bi bi-search pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-slate-400" />
+            <input
+              name="q"
+              className="form-control form-control-sm w-full pl-9"
+              placeholder="Cari no tiket / ref NOC / pelanggan"
+              defaultValue={f.q}
+            />
+          </div>
+          <select
+            name="status"
+            className="form-select form-select-sm w-auto"
+            defaultValue={f.status}
+            aria-label="Status"
+          >
             <option value="">Semua status</option>
             {Object.entries(TICKET_STATUS).map(([k, v]) => (
               <option key={k} value={k}>
@@ -124,6 +138,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
             name="city"
             className="form-select form-select-sm w-auto"
             defaultValue={String(f.city || '')}
+            aria-label="Kota"
           >
             <option value="">Semua kota</option>
             {cities.map((c) => (
@@ -132,8 +147,8 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
               </option>
             ))}
           </select>
-          <select name="sla" className="form-select form-select-sm w-auto" defaultValue={f.sla}>
-            <option value="">SLA</option>
+          <select name="sla" className="form-select form-select-sm w-auto" defaultValue={f.sla} aria-label="SLA">
+            <option value="">Semua SLA</option>
             <option value="ontime">Sesuai</option>
             <option value="late">Lewat</option>
           </select>
@@ -143,6 +158,7 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
             className="form-control form-control-sm w-auto"
             defaultValue={f.from}
             title="Dari tanggal"
+            aria-label="Dari tanggal"
           />
           <input
             type="date"
@@ -150,24 +166,36 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
             className="form-control form-control-sm w-auto"
             defaultValue={f.to}
             title="Sampai tanggal"
+            aria-label="Sampai tanggal"
           />
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             <button className="btn btn-sm btn-primary flex-1">
               <i className="bi bi-search" /> Filter
             </button>
             <Link href="/tickets" className="btn btn-sm btn-outline-secondary">
-              Reset
+              <i className="bi bi-arrow-counterclockwise" /> Reset
             </Link>
           </div>
         </div>
       </form>
 
-      <div className="card">
+      <div className="card overflow-hidden">
+        <div className="card-header">
+          <span className="flex items-center gap-2">
+            <i className="bi bi-list-ul text-slate-400" /> Hasil
+          </span>
+          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+            {total} tiket
+          </span>
+        </div>
         <TicketTable rows={rows} empty="Tidak ada tiket yang cocok." />
         {total > PER ? (
-          <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 text-sm">
-            <span>{total} tiket</span>
-            <ul className="mb-0 flex gap-1">
+          <div className="card-footer flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+            <span>
+              Menampilkan <strong className="text-slate-800">{rows.length}</strong> dari{' '}
+              <strong className="text-slate-800">{total}</strong> tiket
+            </span>
+            <ul className="mb-0 flex flex-wrap gap-1">
               {Array.from({ length: pages }, (_, i) => i + 1).map((n) => (
                 <li key={n}>
                   <Link
@@ -175,8 +203,8 @@ export default async function TicketsPage({ searchParams }: { searchParams: Prom
                     aria-current={n === page ? 'page' : undefined}
                     className={
                       n === page
-                        ? 'rounded bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
-                        : 'rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100'
+                        ? 'rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white'
+                        : 'rounded-lg border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-slate-100'
                     }
                   >
                     {n}

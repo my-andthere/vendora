@@ -260,7 +260,7 @@ export async function saveSignoff(
   userId: number | null,
   stage = 'region'
 ): Promise<boolean> {
-  if (!['material', 'dokumentasi', 'penyelesaian', 'sla'].includes(scope)) return false;
+  if (!['material', 'dokumentasi', 'penyelesaian'].includes(scope)) return false;
   const st = stage === 'cgs' ? 'cgs' : 'region';
   await exec(
     `INSERT INTO ticket_signoffs (ticket_id, scope, ref_id, stage, status, note, checked_by, checked_at)

@@ -12,14 +12,14 @@ import { acceptInfo, slaState, workTime, type TicketLike } from '@/lib/sla';
  */
 
 const VARIANT: Record<string, string> = {
-  secondary: 'bg-slate-200 text-slate-700',
-  info: 'bg-sky-100 text-sky-800',
-  primary: 'bg-blue-600 text-white',
-  warning: 'bg-amber-100 text-amber-800',
-  danger: 'bg-red-100 text-red-700',
-  success: 'bg-emerald-100 text-emerald-800',
+  secondary: 'bg-slate-100 text-slate-600 ring-1 ring-slate-200/80 ring-inset',
+  info: 'bg-sky-50 text-sky-700 ring-1 ring-sky-200/80 ring-inset',
+  primary: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200/80 ring-inset',
+  warning: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200/80 ring-inset',
+  danger: 'bg-red-50 text-red-700 ring-1 ring-red-200/80 ring-inset',
+  success: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80 ring-inset',
   dark: 'bg-slate-800 text-white',
-  light: 'bg-slate-100 text-slate-700',
+  light: 'bg-white text-slate-600 ring-1 ring-slate-200 ring-inset',
 };
 
 function cls(variant: string): string {
