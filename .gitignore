@@ -7,6 +7,10 @@ cjn.txt
 *.cookie
 cookies.txt
 
+# Hasil export/paket lokal (jangan di-commit)
+vendora-project.zip
+procurement_db.sql
+
 # Berkas sementara
 *.tmp
 *.bak
